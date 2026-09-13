@@ -244,7 +244,9 @@ impl Transport {
         idr_tx: Option<mpsc::Sender<()>>,
     ) -> Result<(), TransportError> {
         let input_tx = self.input_tx;
-        let (video_tx, _video_rx) = tokio::sync::broadcast::channel::<H264Packet>(8);
+        const BROADCAST_VIDEO_CHANNEL_CAPACITY: usize = 4;
+        let (video_tx, _video_rx) =
+            tokio::sync::broadcast::channel::<H264Packet>(BROADCAST_VIDEO_CHANNEL_CAPACITY);
         let state = AppState {
             config: self.cfg.clone(),
             input_tx,

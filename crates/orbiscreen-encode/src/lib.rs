@@ -107,9 +107,18 @@ fn first_available_element(kind: EncoderKind) -> Option<&'static str> {
 
 fn detect_available(preferred: EncoderKind) -> (EncoderKind, &'static str) {
     let search_order = match preferred {
-        EncoderKind::Auto | EncoderKind::Nvenc => {
-            [EncoderKind::Nvenc, EncoderKind::Vaapi, EncoderKind::X264]
+        EncoderKind::Auto => {
+            // Under Wayland, the compositor typically runs on the primary/integrated GPU (AMD/Intel).
+            // Prefer native VA-API on the display GPU when available to avoid cross-PCIe transfers to dGPU NVENC.
+            if std::env::var_os("WAYLAND_DISPLAY").is_some()
+                && (element_available("vah264enc") || element_available("vaapih264enc"))
+            {
+                [EncoderKind::Vaapi, EncoderKind::Nvenc, EncoderKind::X264]
+            } else {
+                [EncoderKind::Nvenc, EncoderKind::Vaapi, EncoderKind::X264]
+            }
         }
+        EncoderKind::Nvenc => [EncoderKind::Nvenc, EncoderKind::Vaapi, EncoderKind::X264],
         EncoderKind::Vaapi => [EncoderKind::Vaapi, EncoderKind::Nvenc, EncoderKind::X264],
         EncoderKind::X264 => [EncoderKind::X264, EncoderKind::Nvenc, EncoderKind::Vaapi],
     };
@@ -357,7 +366,8 @@ impl Encoder {
         ])
         .map_err(|e| EncodeError::Pipeline(format!("link parse: {e}")))?;
 
-        let (tx, rx) = mpsc::channel::<EncodedChunk>(64);
+        const ENCODED_CHUNK_CHANNEL_CAPACITY: usize = 8;
+        let (tx, rx) = mpsc::channel::<EncodedChunk>(ENCODED_CHUNK_CHANNEL_CAPACITY);
         appsink.set_callbacks(
             AppSinkCallbacks::builder()
                 .new_sample(move |sink| {

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Bug Fixes
+- **Host Channel Queue Latency Reduction & Hybrid GPU Encoder Optimization (#77)**:
+  - Tighten encoder internal channel from 64 to 8 chunks and daemon video pump channels from 32 to 2 packets to eliminate up to 128 frames (1–2 seconds) of intermediate buffer bloat.
+  - Reduce broadcast video channel capacity in `orbiscreen-transport` from 8 to 4 packets to trigger immediate IDR resync when streaming clients fall behind.
+  - Remove redundant `videoscale` element from native KWin virtual display screencast pipeline, eliminating needless frame inspection and copy overhead.
+  - Automatically prefer native VA-API (`vah264enc` / `vaapih264enc`) over discrete NVENC under Wayland sessions when using `Auto` encoder mode, avoiding cross-GPU PCIe memory copies between the desktop compositor and dGPU.
 - **Drop Stale Frames & Eliminate Stream Latency Accumulation (#77)**:
   - Configure HTTP MPEG-TS pipeline with `is-live=true do-timestamp=true` and `appsink drop=true sync=false max-buffers=1`, ensuring stale frames are dropped immediately under backpressure instead of accumulating seconds of video and input latency.
   - Fix PTS timeline desync in `stream_handler` by clamping PTS delta across frame gaps (>250ms) to nominal frame time, preventing client decoder buffer inflation after laptop suspend/resume or heavy stalls.

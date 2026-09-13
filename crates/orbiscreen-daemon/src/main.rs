@@ -2195,7 +2195,8 @@ async fn run_secondary_display_session(
         }
     });
 
-    let (video_tx, video_rx) = mpsc::channel::<H264Packet>(32);
+    const VIDEO_CHANNEL_CAPACITY: usize = 2;
+    let (video_tx, video_rx) = mpsc::channel::<H264Packet>(VIDEO_CHANNEL_CAPACITY);
     let frame_pump = tokio::spawn(async move {
         let mut ts_base: Option<u64> = None;
         while let Some(chunk) = encoded_rx.recv().await {
@@ -2609,7 +2610,8 @@ async fn run_start(
     });
     info!("D-Bus session service registered: com.orbiscreen.Daemon");
 
-    let (video_tx, video_rx) = mpsc::channel::<H264Packet>(32);
+    const VIDEO_CHANNEL_CAPACITY: usize = 2;
+    let (video_tx, video_rx) = mpsc::channel::<H264Packet>(VIDEO_CHANNEL_CAPACITY);
     let encoder_dump = match std::env::var("ORBISCREEN_ENCODER_DUMP") {
         Ok(path) => match std::fs::OpenOptions::new()
             .create(true)

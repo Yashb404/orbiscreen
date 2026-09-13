@@ -679,7 +679,6 @@ impl KwinVirtualCapture {
             "pipewiresrc path={node_id} do-timestamp=true \
              ! video/x-raw \
              ! videoconvert n-threads=4 \
-             ! videoscale \
              ! video/x-raw,format=BGRA,width={},height={} \
              ! appsink name=sink drop=true sync=false max-buffers=1 emit-signals=false",
             spec.width, spec.height
