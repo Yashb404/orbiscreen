@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+- **Drop Stale Frames & Eliminate Stream Latency Accumulation (#77)**:
+  - Configure HTTP MPEG-TS pipeline with `is-live=true do-timestamp=true` and `appsink drop=true sync=false max-buffers=1`, ensuring stale frames are dropped immediately under backpressure instead of accumulating seconds of video and input latency.
+  - Fix PTS timeline desync in `stream_handler` by clamping PTS delta across frame gaps (>250ms) to nominal frame time, preventing client decoder buffer inflation after laptop suspend/resume or heavy stalls.
+  - Reduce AOA USB accessory `sync_channel` capacity from 64 to 8 chunks to eliminate host-side transport queueing.
+  - Multi-thread software color conversion with `n-threads=4` on `videoconvert` in capture and encode pipelines to prevent CPU bottlenecks during color space conversion at higher resolutions.
+  - Constrain `appsrc` max-bytes to 1 uncompressed frame and `appsink` max-buffers to 1 across capture pipelines to prevent buffer bloat.
+
 ## [v0.28.0] - 2026-09-12
 
 USB AOA frame drop and stutter elimination, secondary display black screen resolution, relative mouse cross-screen traversal, and 1:1 touch coordinate alignment: eliminate USB video frame drops on Screen 1 by expanding socket buffer to 256KB and tuning ExoPlayer buffer pacing, fix secondary display black screen by implementing dynamic wl_output binding and configure retries in damage pump, restore standard relative mouse motion across all displays without boundary confinement, and align Android touch and stylus coordinates 1:1 to host display pixels.

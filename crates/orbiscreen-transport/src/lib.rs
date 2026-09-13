@@ -244,7 +244,7 @@ impl Transport {
         idr_tx: Option<mpsc::Sender<()>>,
     ) -> Result<(), TransportError> {
         let input_tx = self.input_tx;
-        let (video_tx, _video_rx) = tokio::sync::broadcast::channel::<H264Packet>(32);
+        let (video_tx, _video_rx) = tokio::sync::broadcast::channel::<H264Packet>(8);
         let state = AppState {
             config: self.cfg.clone(),
             input_tx,
@@ -775,11 +775,11 @@ fn build_video_pipeline() -> Result<
 > {
     use gstreamer::prelude::*;
     use gstreamer_app::{AppSink, AppSrc};
-    let pipeline_str = "appsrc name=src format=time is-live=false block=false \
+    let pipeline_str = "appsrc name=src format=time is-live=true block=false do-timestamp=true \
                         ! video/x-h264,stream-format=byte-stream,alignment=au \
                         ! h264parse config-interval=1 \
                         ! mpegtsmux alignment=7 \
-                        ! appsink name=sink drop=false sync=false max-buffers=16 emit-signals=false";
+                        ! appsink name=sink drop=true sync=false max-buffers=1 emit-signals=false";
     let p = gstreamer::parse::launch(pipeline_str).map_err(|_| ())?;
     let pipeline = p.downcast::<gstreamer::Pipeline>().map_err(|_| ())?;
     let appsrc = pipeline
@@ -808,7 +808,7 @@ async fn stream_handler(
 
     gstreamer::init().ok();
 
-    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(32);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(8);
     let tx_alive = tx.clone();
 
     let setup_pipeline = |pipeline: &gstreamer::Pipeline,
@@ -821,8 +821,12 @@ async fn stream_handler(
             .build();
         appsrc.set_caps(Some(&caps));
         appsrc.set_format(gstreamer::Format::Time);
-        appsrc.set_max_bytes(256 * 1024);
+        appsrc.set_max_bytes(128 * 1024);
         appsrc.set_block(false);
+
+        appsink.set_sync(false);
+        appsink.set_drop(true);
+        appsink.set_max_buffers(1);
 
         appsink.set_callbacks(
             AppSinkCallbacks::builder()
@@ -895,6 +899,8 @@ async fn stream_handler(
     }
     let pipeline_for_task = pipeline.clone();
 
+    let refresh_hz = state.refresh_hz.max(1);
+    let nominal_frame_ns = 1_000_000_000u64 / u64::from(refresh_hz);
     let mut video_rx = state.video_tx.subscribe();
 
     tokio::spawn(async move {
@@ -902,7 +908,8 @@ async fn stream_handler(
         let _guard = ClientGuard(stats);
 
         let mut wait_keyframe = true;
-        let mut pts_base: Option<u64> = None;
+        let mut stream_pts_ns: u64 = 0;
+        let mut last_pkt_pts_ns: Option<u64> = None;
         loop {
             if tx_alive.is_closed() {
                 debug!("stream client disconnected");
@@ -925,20 +932,40 @@ async fn stream_handler(
                     continue;
                 }
                 wait_keyframe = false;
-                if pts_base.is_none() {
-                    pts_base = Some(pkt.pts_ns);
-                }
             }
 
-            let base = pts_base.unwrap_or(0);
+            let delta_ns = match last_pkt_pts_ns {
+                Some(last) => {
+                    let diff = pkt.pts_ns.saturating_sub(last);
+                    // If the gap between packets exceeds 250ms (e.g. system suspend/resume,
+                    // GPU sleep, or extreme lag spike), do not pass the massive time jump into
+                    // mpegtsmux and downstream players. Clamp the progression to nominal frame duration.
+                    if diff > 250_000_000 {
+                        debug!(
+                            diff_ms = diff / 1_000_000,
+                            "large timestamp gap detected; clamping stream PTS delta to prevent player desync"
+                        );
+                        nominal_frame_ns
+                    } else {
+                        diff
+                    }
+                }
+                None => 0,
+            };
+            last_pkt_pts_ns = Some(pkt.pts_ns);
+            stream_pts_ns = stream_pts_ns.saturating_add(delta_ns);
+
             let mut normalized = pkt;
-            normalized.pts_ns = normalized.pts_ns.saturating_sub(base);
+            normalized.pts_ns = stream_pts_ns;
 
             if let Err(e) = push_h264_packet(&appsrc_clone, &normalized) {
                 match e {
                     gstreamer::FlowError::Flushing | gstreamer::FlowError::Eos => break,
                     _ => {
                         wait_keyframe = true;
+                        if let Some(tx) = &idr_tx {
+                            let _ = tx.try_send(());
+                        }
                     }
                 }
             }
