@@ -3,14 +3,28 @@
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
+## [v0.28.1] - 2026-09-14
+
+Drop stale frames and eliminate stream latency accumulation over Wi-Fi and USB AOA, clamp PTS timeline desync across frame gaps, multi-thread software color conversion, and constrain transport buffer queues (PR [#78](https://github.com/shadow-x78/orbiscreen/pull/78) by [@Yashb404](https://github.com/Yashb404)).
 
 ### Bug Fixes
 - **Drop Stale Frames & Eliminate Stream Latency Accumulation (#77)**:
+- **Drop Stale Frames & Eliminate Stream Latency Accumulation (PR [#78](https://github.com/shadow-x78/orbiscreen/pull/78) by [@Yashb404](https://github.com/Yashb404))**:
   - Configure HTTP MPEG-TS pipeline with `is-live=true do-timestamp=true` and `appsink drop=true sync=false max-buffers=1`, ensuring stale frames are dropped immediately under backpressure instead of accumulating seconds of video and input latency.
   - Fix PTS timeline desync in `stream_handler` by clamping PTS delta across frame gaps (>250ms) to nominal frame time, preventing client decoder buffer inflation after laptop suspend/resume or heavy stalls.
   - Reduce AOA USB accessory `sync_channel` capacity from 64 to 8 chunks to eliminate host-side transport queueing.
   - Multi-thread software color conversion with `n-threads=4` on `videoconvert` in capture and encode pipelines to prevent CPU bottlenecks during color space conversion at higher resolutions.
   - Constrain `appsrc` max-bytes to 1 uncompressed frame and `appsink` max-buffers to 1 across capture pipelines to prevent buffer bloat.
+
+### Version Bumps
+- **Cargo Workspace**: Bumped workspace package version to `0.28.1`.
+- **Android Client**: Incremented `versionCode` to `94`; updated `versionName` to `"0.28.1"`.
+- **Tauri GUI**: Updated `tauri.conf.json` version to `0.28.1`.
+- **PKGBUILD**: Bumped `pkgver` to `0.28.1`.
+- **debian/changelog**: Added `0.28.1-1` release entry for Ubuntu noble.
+- **data/orbiscreen-copr.spec**: Bumped version to `0.28.1` and added changelog entry.
+
+---
 
 ## [v0.28.0] - 2026-09-12
 

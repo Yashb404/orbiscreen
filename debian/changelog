@@ -1,3 +1,15 @@
+orbiscreen (0.28.1-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.28.1 for Ubuntu noble.
+  * Drop stale frames and eliminate stream latency accumulation (PR #78 by @Yashb404).
+  * Configure HTTP MPEG-TS pipeline with is-live=true and appsink drop=true max-buffers=1.
+  * Clamp PTS timeline desync across frame gaps (>250ms) to nominal frame time.
+  * Reduce AOA USB accessory sync_channel capacity from 64 to 8 chunks.
+  * Multi-thread software color conversion with n-threads=4 on videoconvert.
+  * Constrain appsrc max-bytes and appsink max-buffers across capture pipelines.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Mon, 14 Sep 2026 19:40:00 +0300
+
 orbiscreen (0.28.0-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.28.0 for Ubuntu noble.
