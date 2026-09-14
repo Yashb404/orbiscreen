@@ -2,13 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
 ## [v0.28.1] - 2026-09-14
 
 Drop stale frames and eliminate stream latency accumulation over Wi-Fi and USB AOA, clamp PTS timeline desync across frame gaps, multi-thread software color conversion, and constrain transport buffer queues (PR [#78](https://github.com/shadow-x78/orbiscreen/pull/78) by [@Yashb404](https://github.com/Yashb404)).
 
-### Bug Fixes
-- **Drop Stale Frames & Eliminate Stream Latency Accumulation (#77)**:
+### 🐛 Bug Fixes
 - **Drop Stale Frames & Eliminate Stream Latency Accumulation (PR [#78](https://github.com/shadow-x78/orbiscreen/pull/78) by [@Yashb404](https://github.com/Yashb404))**:
   - Configure HTTP MPEG-TS pipeline with `is-live=true do-timestamp=true` and `appsink drop=true sync=false max-buffers=1`, ensuring stale frames are dropped immediately under backpressure instead of accumulating seconds of video and input latency.
   - Fix PTS timeline desync in `stream_handler` by clamping PTS delta across frame gaps (>250ms) to nominal frame time, preventing client decoder buffer inflation after laptop suspend/resume or heavy stalls.
@@ -16,7 +14,7 @@ Drop stale frames and eliminate stream latency accumulation over Wi-Fi and USB A
   - Multi-thread software color conversion with `n-threads=4` on `videoconvert` in capture and encode pipelines to prevent CPU bottlenecks during color space conversion at higher resolutions.
   - Constrain `appsrc` max-bytes to 1 uncompressed frame and `appsink` max-buffers to 1 across capture pipelines to prevent buffer bloat.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.28.1`.
 - **Android Client**: Incremented `versionCode` to `94`; updated `versionName` to `"0.28.1"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.28.1`.
@@ -30,13 +28,13 @@ Drop stale frames and eliminate stream latency accumulation over Wi-Fi and USB A
 
 USB AOA frame drop and stutter elimination, secondary display black screen resolution, relative mouse cross-screen traversal, and 1:1 touch coordinate alignment: eliminate USB video frame drops on Screen 1 by expanding socket buffer to 256KB and tuning ExoPlayer buffer pacing, fix secondary display black screen by implementing dynamic wl_output binding and configure retries in damage pump, restore standard relative mouse motion across all displays without boundary confinement, and align Android touch and stylus coordinates 1:1 to host display pixels.
 
-### Bug Fixes
+### 🐛 Bug Fixes
 - **USB AOA Zero Frame Drops and Stutter Elimination**: Expanded Android USB socket `sendBufferSize` and `receiveBufferSize` to 256KB in `UsbAccessoryManager.kt` to prevent keyframe backpressure. Configured ExoPlayer `DefaultLoadControl` to 120-350ms with a 50ms live target offset in `PlayerHolder.kt` to absorb USB jitter and ensure silky smooth 60fps playback without rebuffering stalls.
 - **Secondary Display Black Screen Resolution**: Implemented `wl_registry::Event::Global` handling and a 5s retry loop in `crates/orbiscreen-capture/src/damage_pump.rs` to dynamically bind newly created `wl_output` globals and wait for layer surface configuration. Added a 5-iteration retry loop for `kscreen-doctor` in `crates/orbiscreen-daemon/src/main.rs` to ensure secondary virtual outputs are enabled and scaled properly in KWin.
 - **Relative Mouse Traversal Across Displays**: Configured `mouse_keyboard` in `crates/orbiscreen-input/src/x11.rs` as a pure relative pointer device with standard relative axes and events. Excluded mouse devices from `mapToWorkspace = false` in `crates/orbiscreen-daemon/src/main.rs`, allowing the mouse cursor to move freely between physical screens and virtual monitors.
 - **1:1 Pixel-Accurate Touch & Stylus Coordinates**: Aligned Android stream resolution in `StreamViewModel.kt` directly with host stream dimensions (1920x1080), eliminating aspect ratio and coordinate scaling divergence between client touch events and host virtual outputs.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.28.0`.
 - **Android Client**: Incremented `versionCode` to `93`; updated `versionName` to `"0.28.0"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.28.0`.
@@ -50,13 +48,13 @@ USB AOA frame drop and stutter elimination, secondary display black screen resol
 
 USB AOA frame drop and stutter elimination, secondary display black screen resolution, relative mouse cross-screen traversal, and 1:1 touch coordinate alignment: eliminate USB video frame drops on Screen 1 by expanding socket buffer to 256KB and tuning ExoPlayer buffer pacing (#77), fix secondary display black screen by implementing dynamic wl_output binding and configure retries in damage pump (#77), restore standard relative mouse motion across all displays without boundary confinement (#77), and align Android touch and stylus coordinates 1:1 to host display pixels (#77).
 
-### Bug Fixes
+### 🐛 Bug Fixes
 - **USB AOA Zero Frame Drops and Stutter Elimination (#77)**: Expanded Android USB socket `sendBufferSize` and `receiveBufferSize` to 256KB in `UsbAccessoryManager.kt` to prevent keyframe backpressure. Configured ExoPlayer `DefaultLoadControl` to 120-350ms with a 50ms live target offset in `PlayerHolder.kt` to absorb USB jitter and ensure silky smooth 60fps playback without rebuffering stalls. Closes #77.
 - **Secondary Display Black Screen Resolution (#77)**: Implemented `wl_registry::Event::Global` handling and a 5s retry loop in `crates/orbiscreen-capture/src/damage_pump.rs` to dynamically bind newly created `wl_output` globals and wait for layer surface configuration. Added a 5-iteration retry loop for `kscreen-doctor` in `crates/orbiscreen-daemon/src/main.rs` to ensure secondary virtual outputs are enabled and scaled properly in KWin. Closes #77.
 - **Relative Mouse Traversal Across Displays (#77)**: Configured `mouse_keyboard` in `crates/orbiscreen-input/src/x11.rs` as a pure relative pointer device with standard relative axes and events. Excluded mouse devices from `mapToWorkspace = false` in `crates/orbiscreen-daemon/src/main.rs`, allowing the mouse cursor to move freely between physical screens and virtual monitors. Closes #77.
 - **1:1 Pixel-Accurate Touch & Stylus Coordinates (#77)**: Aligned Android stream resolution in `StreamViewModel.kt` directly with host stream dimensions (1920x1080), eliminating aspect ratio and coordinate scaling divergence between client touch events and host virtual outputs. Closes #77.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.27.9`.
 - **Android Client**: Incremented `versionCode` to `91`; updated `versionName` to `"0.27.9"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.27.9`.
@@ -70,13 +68,13 @@ USB AOA frame drop and stutter elimination, secondary display black screen resol
 
 Secondary display damage pump connector matching fix, USB AOA frame drop and video stutter elimination, touch delta normalization, and full USB audio removal: fix secondary tablet display damage pump matching so Virtual-ORBISCREEN-2 receives its own damage ticks and never binds to primary display (#77), eliminate USB frame drops, video stuttering, and keyframe stalls by increasing sync channel capacity to 64 and bounding pts calculations (#77), normalize mouse movement and cursor speed in Android PlayerSurface (#77), and completely remove USB audio pipeline, device sinks, and UI settings across the entire project (#77).
 
-### Bug Fixes
+### 🐛 Bug Fixes
 - **Secondary Display Damage Pump Output Matching (#77)**: Fixed `crates/orbiscreen-capture/src/damage_pump.rs` output matching logic to ensure `Virtual-ORBISCREEN-2` does not match `Virtual-ORBISCREEN` via loose substring checks. Displays with suffix '2' are strictly separated so KWin receives damage ticks and renders frames continuously for secondary displays. Closes #77.
 - **USB AOA Zero Frame Drops and Stutter Elimination (#77)**: Increased `video_tx` sync channel capacity from 4 to 64 in `crates/orbiscreen-transport/src/aoa.rs` and from 4 to 32 in `crates/orbiscreen-daemon/src/main.rs` to allow large H.264 IDR frames to pass through without stalling the pipeline. Bounded daemon keepalive `pts_ns` calculation to prevent cumulative future timestamp drift. Closes #77.
 - **Mouse Sensitivity and Touch Delta Normalization (#77)**: Fixed `PlayerSurface.kt` by removing artificial display scaling multiplication on delta move and eliminating duplicate event emission, restoring smooth 1:1 mouse movement when controlling via touch trackpad. Closes #77.
 - **Complete USB Audio Removal (#77)**: Completely removed virtual pulse audio sink creation, audio GStreamer pipelines, and `audio` query parameters from `orbiscreen-transport`. Removed `usbAudioEnabled` preference and setting UI from Android client, simplifying stream playback to a dedicated, low-latency video pipeline. Closes #77.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.27.8`.
 - **Android Client**: Incremented `versionCode` to `90`; updated `versionName` to `"0.27.8"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.27.8`.
@@ -90,13 +88,13 @@ Secondary display damage pump connector matching fix, USB AOA frame drop and vid
 
 Secondary display damage pump independent pacing, kscreen placement, initial keepalive keyframe push, and mouse rubberbanding elimination: fix secondary tablet black screen by matching independent 60fps damage ticks to Virtual-ORBISCREEN-2 and prioritizing target output connectors (#77), auto-position secondary virtual monitors to the right of primary displays via kscreen-doctor (#77), push initial keepalive keyframes on display start to avoid waiting for desktop activity (#77), and eliminate mouse rubberbanding and erratic jumping by routing relative pointer motion strictly to the virtual mouse device while isolating stylus pen tools (#77).
 
-### Bug Fixes
+### 🐛 Bug Fixes
 - **Secondary Display Damage Pump Pacing (#77)**: Updated `crates/orbiscreen-capture/src/damage_pump.rs` to accept `target_output` and generate independent 60fps damage ticks targeted to `Virtual-ORBISCREEN-2`. Updated `crates/orbiscreen-capture/src/kwin_virtual.rs` to prioritize matching the target output base name directly, preventing the second display from falling into a black screen state. Closes #77.
 - **Automated KScreen Output Placement (#77)**: Added automated `kscreen-doctor` execution in `crates/orbiscreen-daemon/src/main.rs` when spawning `Virtual-ORBISCREEN-2` to enable and position the secondary screen immediately to the right of primary desktop outputs. Closes #77.
 - **Immediate Keepalive Frame Push (#77)**: Initialized `keepalive_frame` with a non-empty buffer on display start in `orbiscreen-daemon`, ensuring H.264 SPS/PPS and IDR keyframes are pushed to the client immediately without waiting for compositor activity. Closes #77.
 - **Mouse Rubberbanding and Jitter Elimination (#77)**: Fixed `crates/orbiscreen-input/src/x11.rs` to route `PointerEvent::Move` and `Button` exclusively to `mouse_keyboard` as relative pointer and button events. Removed tablet uinput injection and `BTN_TOOL_PEN` activation from mouse events. Added tool release on device creation and when stylus contact ends. Restricted KWin input mapping (`mapToWorkspace = false`) exclusively to touchscreens and tablets in `orbiscreen-daemon`. Closes #77.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.27.7`.
 - **Android Client**: Incremented `versionCode` to `89`; updated `versionName` to `"0.27.7"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.27.7`.
@@ -110,14 +108,14 @@ Secondary display damage pump independent pacing, kscreen placement, initial kee
 
 Dual tablet concurrent virtual displays, AOA candidate detection expansion, zero-lag mouse pacing, and uinput device isolation: support running multiple Android tablets concurrently as independent extended displays on KDE Plasma with automatic port allocation and isolated virtual outputs (#77), expand USB AOA candidate detection to Allwinner devices (such as VASOUN L10) and sysfs MTP/ADB interface probing (#77), eliminate mouse cursor jumping and stuttering by routing relative pointer motion strictly to the virtual mouse device (#77), and optimize Android ExoPlayer buffer pacing to 45-120ms with dynamic live playback speed adjustment to eliminate frame drops and audio starvation.
 
-### Bug Fixes
+### 🐛 Bug Fixes
 - **Dual Tablet Concurrent Displays (#77)**: Added `run_secondary_display_supervisor` and `run_secondary_display_session` in `orbiscreen-daemon` to automatically launch an independent virtual display (`Virtual-ORBISCREEN-2`) on port 8790 when a second tablet connects, and cleanly tear it down when disconnected. Added dynamic output naming support to `orbiscreen-capture::kwin_virtual` (`CaptureSession::open_kwin_named`). Closes #77.
 - **AOA Candidate Detection Expansion (#77)**: Added Allwinner (`0x1f3a`), Rockchip, Unisoc, MediaTek, and other vendors to `ANDROID_VENDORS` in `orbiscreen-transport::aoa`. Added sysfs interface descriptor probing for MTP and ADB classes to detect any unlisted Android device. Closes #77.
 - **Zero-Lag Mouse Movement and Jitter Elimination (#77)**: Fixed `crates/orbiscreen-input/src/x11.rs` to write relative motion events exclusively to `mouse_keyboard`, removing the concurrent absolute tablet coordinate and pen down/up injection that caused cursor fighting and erratic jumps. Closes #77.
 - **Android Low-Latency Buffer Pacing**: Optimized `PlayerHolder.kt` `loadControl` buffer durations from 250-500ms down to 45-120ms to eliminate half-second video latency. Configured dynamic live playback speed between 0.98f and 1.05f to drain buffer drift smoothly. Adjusted `LowLatencyVideoRenderer` drop thresholds to prevent continuous IDR requests.
 - **Uinput Device Isolation (#77)**: Differentiated uinput device names and product IDs for secondary displays (`Orbiscreen 2 Virtual Touchscreen`) and updated KWin input binding to match devices to their respective virtual screens. Closes #77.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.27.6`.
 - **Android Client**: Incremented `versionCode` to `88`; updated `versionName` to `"0.27.6"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.27.6`.
@@ -131,14 +129,14 @@ Dual tablet concurrent virtual displays, AOA candidate detection expansion, zero
 
 USB AOA concurrent multi-device handling, Android accessory fallback, interactive battery optimization switch, app-wide keepScreenAwake, and rounded ripple UI polish: overhaul host supervisor to maintain concurrent active accessory bridges and probe Android candidate devices in parallel without blocking candidate detection (#77), add fallback accessory resolution and FLAG_UPDATE_CURRENT for permission intents (#77), replace battery optimization row with an interactive switch preference querying real-time system state with intent launchers (#77), enable keepScreenAwake across the entire Android app via FLAG_KEEP_SCREEN_ON (#77), vertically center USB audio warning container, and round ripple selection highlights on all cards and preference rows.
 
-### Bug Fixes
+### 🐛 Bug Fixes
 - **Multi-Device USB AOA Supervisor (#77)**: Overhauled `orbiscreen-transport::aoa::supervisor` to maintain `active_bridges: HashMap<PathBuf, ActiveBridge>` and run accessory bridges concurrently with `tokio::task::spawn_blocking`. Handshakes for candidate devices are now initiated in parallel without blocking the scan loop, preventing device collisions (such as a connected phone blocking detection of a tablet). Closes #77.
 - **Android USB Accessory Fallback (#77)**: Added single-accessory fallback `targetAccessory = accessory ?: usbManager.accessoryList?.firstOrNull()` in `MainActivity.handleAccessoryIntent`. Added `FLAG_UPDATE_CURRENT` to `PendingIntent.FLAG_MUTABLE` in `UsbAccessoryManager.requestPermission`. Closes #77.
 - **Interactive Battery Optimization Switch (#77)**: Replaced `ClickPreferenceRow` with `SwitchPreferenceRow` in `SettingsScreen.kt`. Turning the switch ON requests exemption via `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, and turning it OFF opens `ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`. State is updated dynamically on `ON_RESUME` via `PowerManager.isIgnoringBatteryOptimizations`. Closes #77.
 - **App-Wide Keep Screen Awake (#77)**: Added `keepScreenAwakeFlow` in `PrefsStore.kt` and observed it in `MainActivity.kt` with `FLAG_KEEP_SCREEN_ON` applied at the window level, ensuring the screen stays awake throughout the entire application when enabled. Closes #77.
 - **UI Polish and Rounded Ripples**: Vertically centered the text and icon in the USB Audio Output warning box (`verticalAlignment = Alignment.CenterVertically`). Added `clip(RoundedCornerShape(16.dp))` and `clip(RoundedCornerShape(22.dp))` to clickable preference rows, dialog options, and elevated cards in `SettingsScreen.kt` and `DiscoveryScreen.kt` so touch ripples and press highlights conform cleanly to rounded corners without sharp 90-degree edges.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.27.5`.
 - **Android Client**: Incremented `versionCode` to `87`; updated `versionName` to `"0.27.5"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.27.5`.
@@ -152,14 +150,14 @@ USB AOA concurrent multi-device handling, Android accessory fallback, interactiv
 
 Android client USB connection and display wake lock fix: register USB BroadcastReceiver with `RECEIVER_EXPORTED` on Android 13/14+ to prevent system accessory broadcasts from being dropped (#77), add `onResume()` initialization and background accessory polling so USB connects without restarting the app (#77), buffer auto-connect events with `replay = 1` to guarantee instant session startup, resolve Activity window through `Context.findActivity()` and set `keepScreenOn` directly on Compose View to eliminate screen timeouts during streaming (#77), and add a dedicated Battery Optimization preference row with direct system intent launcher (#77).
 
-### Bug Fixes
+### 🐛 Bug Fixes
 - **USB AOA Receiver Block on Android 13+ (#77)**: Changed `usbReceiver` registration from `RECEIVER_NOT_EXPORTED` to `RECEIVER_EXPORTED` in `MainActivity.kt`. System broadcasts `ACTION_USB_ACCESSORY_ATTACHED`, `ACTION_USB_ACCESSORY_DETACHED`, and `ACTION_USB_PERMISSION` are delivered across process boundaries and were previously silently blocked by the Android OS framework. Closes #77.
 - **USB AOA Reconnect and Auto-Connect (#77)**: Added `UsbAccessoryManager.init()` to `MainActivity.onResume()` and inside `UsbHeroCard` periodic probe loop in `DiscoveryScreen.kt`. Configured `autoConnectEvent` with `replay = 1` and `onBufferOverflow = DROP_OLDEST` so auto-connect events are never lost before UI composition finishes. Added single-accessory fallback and case-insensitive matching in `UsbAccessoryManager.kt`. Closes #77.
 - **Keep Screen Awake on Localized Context (#77)**: Fixed `keepScreenAwake` failing when app language is set to Arabic (`ar`). `createConfigurationContext` wraps `Activity` in a `ContextWrapper`, causing `context as? Activity` to return `null`. Added `Context.findActivity()` helper, and set `LocalView.current.keepScreenOn = prefs.keepScreenAwake` for foolproof screen wake lock during streaming. Closes #77.
 - **Battery Optimization Exemption Setting (#77)**: Added `WAKE_LOCK` and `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` to `AndroidManifest.xml`. Added interactive Battery Optimization row in `SettingsScreen.kt` querying `powerManager.isIgnoringBatteryOptimizations` with live lifecycle resume updates, status pill, and one-tap intent launcher for disabling system battery restrictions.
 - **Icon Clarity**: Changed `keep_screen_awake` icon from `BatteryFull` to `PhoneAndroid` to prevent visual confusion with battery settings.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.27.4`.
 - **Android Client**: Incremented `versionCode` to `86`; updated `versionName` to `"0.27.4"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.27.4`.
@@ -173,14 +171,14 @@ Android client USB connection and display wake lock fix: register USB BroadcastR
 
 Android client audio playback fix: configure AudioAttributes with USAGE_MEDIA and enable audio focus handling so sound routes to tablet speakers/headphones (#77), increase DefaultLoadControl buffer durations to eliminate immediate AudioTrack buffer starvation underruns, bypass video-only low-latency filters for audio decoders, and standardize host GStreamer pipeline on 48 kHz stereo with ADTS stream format framing for MPEG-TS audio.
 
-### Bug Fixes
+### 🐛 Bug Fixes
 - **Android Audio Output and Focus (#77)**: Configured `AudioAttributes` with `C.USAGE_MEDIA` and `C.AUDIO_CONTENT_TYPE_MUSIC` with `handleAudioFocus = true` on ExoPlayer in `PlayerHolder.kt`. Without media classification and audio focus, Android audio policy muted playback or dropped output over USB connections. Closes #77.
 - **AudioTrack Buffer Starvation (#77)**: Increased `DefaultLoadControl` buffer parameters from `(50, 150, 20, 40)` ms to `(250, 500, 100, 150)` ms. The previous 20 ms playback start buffer was smaller than a single AAC audio frame (21.3 ms) and Android HAL `minBufferSize` (46-90 ms), causing immediate `AudioTrack` underruns and silenced audio. Closes #77.
 - **Audio Decoder Selection**: Updated `MediaCodecSelector` in `buildRenderersFactory()` to pass MIME types starting with `audio/` directly to `MediaCodecSelector.DEFAULT`, avoiding video-specific low-latency hardware filtering on Android software audio decoders.
 - **Host Audio Pipeline Standard (48 kHz ADTS)**: Enforced `audio/x-raw,rate=48000,channels=2` before `avenc_aac` and `audio/mpeg,stream-format=adts` after `aacparse` in `build_audio_video_pipeline()` in `crates/orbiscreen-transport/src/lib.rs`. Guarantees standard ADTS headers and sample rate compatibility across all Android decoders.
 - **Explicit Audio Track Selection**: Configured `trackSelectionParameters` in `PlayerHolder.kt` to ensure audio tracks are explicitly enabled when audio is requested, and added `onTracksChanged` debug logging.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.27.3`.
 - **Android Client**: Incremented `versionCode` to `85`; updated `versionName` to `"0.27.3"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.27.3`.
@@ -194,12 +192,12 @@ Android client audio playback fix: configure AudioAttributes with USAGE_MEDIA an
 
 Stream stability and audio-video multiplexing fix: eliminate periodic stream freezing by removing false-positive live-edge seek loop in Android client (#77), add dedicated upstream-leaky queues for both video and audio before mpegtsmux to prevent frame stalls and audio dropouts (#77), and format virtual sink device description to cleanly display "Orbiscreen Audio" with space in system sound settings.
 
-### Bug Fixes
+### 🐛 Bug Fixes
 - **Video Stream Periodic Freezing (#77)**: Removed false-positive `seekToDefaultPosition()` loop in `PlayerHolder.kt` that evaluated ExoPlayer's healthy buffer duration against a tight 80 ms threshold, causing unnecessary player resets and IDR requests every 4 seconds. Closes #77.
 - **Audio-Video Multiplexing Stalls (#77)**: Added independent `queue` elements with `leaky=upstream` right before `mpegtsmux` for both video and audio in `build_audio_video_pipeline()`. Replaced undersized 20 ms downstream-leaky queue with a 200 ms upstream-leaky queue for audio, preventing AAC frame drops and multiplexer stalls at 60 fps. Closes #77.
 - **Virtual Sink Display Name**: Updated `sink_properties` in `ensure_virtual_sink()` to properly escape spaces so PulseAudio/PipeWire creates the sink with clean description "Orbiscreen Audio" instead of stripping backslashes.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.27.2`.
 - **Android Client**: Incremented `versionCode` to `84`; updated `versionName` to `"0.27.2"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.27.2`.
@@ -212,7 +210,7 @@ Stream stability and audio-video multiplexing fix: eliminate periodic stream fre
 
 Trackpad stability, latency cure for long sessions, persistent toolbar, and a real audio output device: RelativeMove now drives the true relative mouse on the host so the cursor stays put when you lift your finger (#77), accumulated session lag is hard-dropped the moment it exceeds 80 ms with EWMA clock smoothing preventing false positives (#77), the in-session toolbar no longer vanishes after 12 seconds, and "Orbiscreen Audio" now appears as a proper PipeWire/PulseAudio output device you can route any app to from system sound settings.
 
-### Bug Fixes
+### 🐛 Bug Fixes
 - **Trackpad cursor jumps to primary screen on finger lift (#77)**: `PointerEvent::RelativeMove` in `x11.rs` was injected into the `tablet` uinput device as absolute `Abs::X/Y` with `BTN_TOOL_PEN`. When the finger lifted, the pen-proximity signal stopped and KWin snapped the cursor back to the primary screen. Fixed by routing `RelativeMove` to `mouse_keyboard` as true relative `Rel::X/Rel::Y` events. The cursor now stays exactly where it was on the secondary screen with no jump. References #77.
 - **Trackpad tap-to-click lands at wrong position**: `moveDelta()` in `InputDispatcher.kt` accumulated `pendingDx/pendingDy` for the network loop but never updated `cursorX/cursorY`. When `leftClick()` fired it sent a `Move` to the stale center-of-screen position. Fixed by also updating `cursorX/cursorY` cumulatively in `moveDelta()` with boundary clamping. References #77.
 - **Latency accumulation after long sessions (#77)**: After 30-60 minutes ExoPlayer's internal buffer drifted ahead of real time. Added a coroutine in `PlayerHolder.kt` that checks `bufferedPosition - currentPosition` every 2 seconds and calls `seekToDefaultPosition()` + IDR request when lag exceeds 80 ms. Closes #77.
@@ -220,10 +218,10 @@ Trackpad stability, latency cure for long sessions, persistent toolbar, and a re
 - **Keyframe dropped during stale-frame flush (Wi-Fi)**: The stale-frame guard in `UdpPlayer.kt` discarded all frames including keyframes when measured latency exceeded 75 ms, causing a decoder freeze until the next IDR arrived. Fixed by exempting keyframes from the drop condition so the decoder can recover immediately. Closes #77.
 - **Session toolbar closes automatically**: A `LaunchedEffect(showControls)` block was automatically hiding the controls after a 12-second delay. Removed the effect entirely; the toolbar now stays visible until the user explicitly taps the eye button. References #76.
 
-### Features
+### 🚀 Features & Enhancements
 - **Virtual Audio Sink "Orbiscreen Audio"**: When a client connects with `audio=1`, the host now calls `ensure_virtual_sink()` which uses `pactl load-module module-null-sink` to create a dedicated sink named `orbiscreen_audio` with description "Orbiscreen Audio". The GStreamer pipeline captures from `orbiscreen_audio.monitor` instead of `@DEFAULT_MONITOR@`. The sink appears as a standard output device in GNOME/KDE sound settings and any application or system audio can be routed to it. The sink is idempotent -- it is only created if it does not already exist.
 
-### Version Bumps
+### 📦 Packaging & Versions
 - **Cargo Workspace**: Bumped workspace package version to `0.27.1`.
 - **Android Client**: Incremented `versionCode` to `83`; updated `versionName` to `"0.27.1"`.
 - **Tauri GUI**: Updated `tauri.conf.json` version to `0.27.1`.
