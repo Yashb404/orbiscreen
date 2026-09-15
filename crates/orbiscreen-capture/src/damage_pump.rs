@@ -82,9 +82,7 @@ fn run(
         .map_err(|e| format!("roundtrip: {e}"))?;
 
     let find_target = |state: &PumpState| -> Option<wl_output::WlOutput> {
-        let is_sec = target_output
-            .as_deref()
-            .map_or(false, |t| t.contains('2'));
+        let is_sec = target_output.as_deref().is_some_and(|t| t.contains('2'));
         if let Some(ref name_target) = target_output {
             let clean_target = name_target.trim().to_uppercase();
             let exact = state

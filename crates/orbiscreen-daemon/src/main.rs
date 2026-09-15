@@ -2652,8 +2652,9 @@ async fn run_start(
     let frame_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let fc = frame_count.clone();
     let encoder_for_pump = Arc::clone(&encoder);
-    let initial_black: Arc<[u8]> =
-        Arc::from(vec![0u8; (actual_dims.0 as usize) * (actual_dims.1 as usize) * 4].into_boxed_slice());
+    let initial_black: Arc<[u8]> = Arc::from(
+        vec![0u8; (actual_dims.0 as usize) * (actual_dims.1 as usize) * 4].into_boxed_slice(),
+    );
     let _ = encoder.push_frame(initial_black.as_ref(), actual_dims.0, actual_dims.1, 0);
     let cap_pump = tokio::spawn(async move {
         let encoder = encoder_for_pump;
