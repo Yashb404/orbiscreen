@@ -1,3 +1,14 @@
+orbiscreen (0.28.4-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.28.4 for Ubuntu noble.
+  * Fix Android tablet black screen over USB (AOA) by expanding MPEG-TS buffer capacity to 2048 chunks.
+  * Eliminate video pipeline packet dropping in appsrc and appsink.
+  * Optimize USB bulk transfer framing to fit within single USB transfer packet limits.
+  * Prevent initial black frame injection and cache keepalive only after first real frame capture.
+  * Fix daemon stop deadlock by removing watch channel race condition.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Wed, 16 Sep 2026 03:00:00 +0300
+
 orbiscreen (0.28.3-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.28.3 for Ubuntu noble.

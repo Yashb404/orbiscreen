@@ -2213,16 +2213,13 @@ async fn run_secondary_display_session(
     });
 
     let encoder_for_pump = Arc::clone(&encoder);
-    let initial_black = vec![0u8; (actual_dims.0 as usize) * (actual_dims.1 as usize) * 4];
-    let _ = encoder.push_frame(&initial_black, actual_dims.0, actual_dims.1, 0);
     let cap_pump = tokio::spawn(async move {
         let encoder = encoder_for_pump;
         let frame_dur = Encoder::frame_duration_ns(spec.refresh_rate_hz);
         const KEEPALIVE: std::time::Duration = std::time::Duration::from_millis(100);
         let started = std::time::Instant::now();
-        let mut last_pts_ns: u64 = frame_dur;
-        let mut keepalive_frame: Option<(u32, u32, Vec<u8>)> =
-            Some((actual_dims.0, actual_dims.1, initial_black));
+        let mut last_pts_ns: u64 = 0;
+        let mut keepalive_frame: Option<(u32, u32, Vec<u8>)> = None;
         let mut last_snapshot: Option<std::time::Instant> = None;
         loop {
             let outcome = match tokio::time::timeout(KEEPALIVE, source.next_frame()).await {
@@ -2593,9 +2590,7 @@ async fn run_start(
 
     let stats = std::sync::Arc::new(Stats::default());
 
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
-    let shutdown_keepalive = shutdown_tx.clone();
-    let _shutdown_keepalive = shutdown_keepalive.clone();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let backend_name = source.backend_name();
     let dbus_handles = std::sync::Arc::new(dbus::DaemonHandles {
         is_running: is_running.clone(),
@@ -2652,18 +2647,13 @@ async fn run_start(
     let frame_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let fc = frame_count.clone();
     let encoder_for_pump = Arc::clone(&encoder);
-    let initial_black: Arc<[u8]> = Arc::from(
-        vec![0u8; (actual_dims.0 as usize) * (actual_dims.1 as usize) * 4].into_boxed_slice(),
-    );
-    let _ = encoder.push_frame(initial_black.as_ref(), actual_dims.0, actual_dims.1, 0);
     let cap_pump = tokio::spawn(async move {
         let encoder = encoder_for_pump;
         let frame_dur = Encoder::frame_duration_ns(spec.refresh_rate_hz);
         const KEEPALIVE: std::time::Duration = std::time::Duration::from_millis(100);
         let started = std::time::Instant::now();
-        let mut last_pts_ns: u64 = frame_dur;
-        let mut keepalive_frame: Option<(u32, u32, Arc<[u8]>)> =
-            Some((actual_dims.0, actual_dims.1, initial_black));
+        let mut last_pts_ns: u64 = 0;
+        let mut keepalive_frame: Option<(u32, u32, Arc<[u8]>)> = None;
         let mut last_snapshot: Option<std::time::Instant> = None;
         loop {
             let outcome = match tokio::time::timeout(KEEPALIVE, source.next_frame()).await {
@@ -3003,31 +2993,20 @@ async fn run_start(
         true,
     );
 
-    let mut serve_fut = std::pin::pin!(transport.serve(
-        video_rx,
-        stats,
-        actual_dims.0,
-        actual_dims.1,
-        spec.refresh_rate_hz,
-        encoder_name,
-        shutdown_rx.clone(),
-        Some(idr_tx),
-    ));
-
-    tokio::select! {
-        res = &mut serve_fut => {
-            res.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-        }
-        _ = tokio::signal::ctrl_c() => {
-            info!("Received SIGINT (Ctrl-C), initiating graceful shutdown...");
-            _ = shutdown_keepalive.send(true);
-            let _ = (&mut serve_fut).await;
-        }
-        _ = shutdown_rx.changed() => {
-            info!("D-Bus Stop received, initiating graceful shutdown...");
-            _ = shutdown_keepalive.send(true);
-            let _ = (&mut serve_fut).await;
-        }
+    if let Err(e) = transport
+        .serve(
+            video_rx,
+            stats,
+            actual_dims.0,
+            actual_dims.1,
+            spec.refresh_rate_hz,
+            encoder_name,
+            shutdown_rx,
+            Some(idr_tx),
+        )
+        .await
+    {
+        return Err(Box::new(e));
     }
     is_running.store(false, std::sync::atomic::Ordering::SeqCst);
     encoder.stop();

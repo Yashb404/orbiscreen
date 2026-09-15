@@ -9,6 +9,7 @@
 # ── Metadata ──
 Name:           orbiscreen
 Version:        0.28.3
+Version:        0.28.4
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -142,6 +143,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Wed Sep 16 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.4-1
+- Release 0.28.4: Fix Android tablet black screen over USB (AOA) by expanding MPEG-TS buffer capacity to 2048 chunks; eliminate video pipeline packet drops in appsrc and appsink; optimize USB bulk transfer framing to prevent packet fragmentation; initialize keepalive frames only after first real frame capture; fix daemon stop deadlock by removing watch channel race condition.
+
 * Wed Sep 16 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.3-1
 - Release 0.28.3: Fix tablet black screen by dynamically scanning and binding asynchronous Wayland outputs in damage pump; pre-seed capture pipeline with initial black frame in cap_pump to prevent encoder and stream starvation; add automatic runtime fallback from failing hardware encoders to software x264; add GStreamer bus sync handler for real-time encoder error reporting; expand AOA video sync_channel buffer capacity to 64 chunks.
 

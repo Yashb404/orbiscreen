@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.28.4] - 2026-09-16
+
+Fix Android tablet black screen over USB (AOA) by expanding MPEG-TS transmission buffer capacity to 2048 chunks, eliminating video pipeline packet dropping in appsrc and appsink, optimizing USB bulk transfer framing to prevent packet fragmentation, initializing keepalive frames cleanly only after first real frame capture, and resolving daemon stop deadlock by removing the watch channel race condition.
+
+### 🐛 Bug Fixes
+- **Eliminate MPEG-TS Bitstream Corruption & Tablet Black Screen**:
+  - Expanded client transmission channel buffer from 16 chunks (~21 KB) to 2048 chunks (~2.7 MB capacity), preventing MPEG-TS packet drops during high-bitrate frame bursts that previously broke PES headers and caused Android MediaCodec decoding failures.
+  - Configured `appsrc` with `block=true` and `do-timestamp=false` to preserve precise encoder PTS and prevent input frame dropping.
+  - Configured `appsink` with `drop=false`, `sync=false`, and `max-buffers=0` to guarantee that all intermediate MPEG-TS packets are delivered intact.
+  - Sized TCP read buffer in AOA to `MAX_PAYLOAD_LEN - FRAME_HEADER_LEN` (16379 bytes) so that framed packets never exceed 16384 bytes, ensuring every packet fits into exactly one USB bulk transfer and eliminating fragmentation.
+  - Expanded Android `UsbAccessoryManager` incoming accumulator buffer ceiling from 128 KB to 4 MB, preventing buffer purges and stream desynchronization during frame bursts.
+- **Initial Frame Capture & Keepalive Cleanliness**:
+  - Removed artificial `initial_black` frame pre-push from capture pipeline initialization in both primary and secondary sessions.
+  - Initialized `keepalive_frame` to `None`, caching frame data only after the first authentic desktop frame arrives from the Wayland capture source.
+- **Graceful Shutdown & Stop Deadlock Fix**:
+  - Resolved daemon hang on `orbiscreen stop` by simplifying the server await loop, eliminating duplicate watch notification consumption between `main.rs` and `transport.serve`.
+  - Added broadcast client shutdown notification upon server termination to cleanly transition active client GStreamer pipelines to NULL.
+
+### 📦 Packaging & Versions
+- **Cargo Workspace**: Bumped workspace package version to `0.28.4`.
+- **Android Client**: Incremented `versionCode` to `97`; updated `versionName` to `"0.28.4"`.
+- **Tauri GUI**: Updated `tauri.conf.json` version to `0.28.4`.
+- **PKGBUILD**: Bumped `pkgver` to `0.28.4`.
+- **debian/changelog**: Added `0.28.4-1` release entry for Ubuntu noble.
+- **data/orbiscreen-copr.spec**: Bumped version to `0.28.4`.
+
+---
+
 ## [v0.28.3] - 2026-09-16
 
 Fix tablet black screen and AOA USB disconnect (`os error 71`) by dynamically discovering and binding asynchronous Wayland virtual outputs in damage pump, pre-seeding capture pipeline with initial black frame in cap pump to eliminate encoder and client stream starvation, adding automatic runtime fallback from failing hardware encoders to software x264 with GStreamer bus sync handler error logging, and expanding AOA video sync channel buffer capacity.

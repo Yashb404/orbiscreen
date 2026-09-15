@@ -7,6 +7,7 @@
 
 pkgname=orbiscreen
 pkgver=0.28.3
+pkgver=0.28.4
 pkgrel=1
 pkgdesc="Turn Android devices into high-performance secondary monitors for Linux (Wayland & X11)"
 arch=('x86_64')

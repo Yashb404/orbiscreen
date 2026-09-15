@@ -423,7 +423,7 @@ pub fn run_accessory_bridge(
     type StreamMap = Arc<Mutex<HashMap<u16, StreamEntry>>>;
 
     let tcp_streams: StreamMap = Arc::new(Mutex::new(HashMap::new()));
-    let mut rx_buf = vec![0u8; MAX_PAYLOAD_LEN];
+    let mut rx_buf = vec![0u8; MAX_PAYLOAD_LEN + FRAME_HEADER_LEN];
     let mut acc_buf = Vec::new();
 
     while running.load(Ordering::Relaxed) {
@@ -511,7 +511,7 @@ pub fn run_accessory_bridge(
                             };
 
                             std::thread::spawn(move || {
-                                let mut buf = vec![0u8; MAX_PAYLOAD_LEN];
+                                let mut buf = vec![0u8; MAX_PAYLOAD_LEN - FRAME_HEADER_LEN];
                                 while running_tcp.load(Ordering::Relaxed) {
                                     match tcp_read_stream.read(&mut buf) {
                                         Ok(0) => break,

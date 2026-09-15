@@ -779,11 +779,11 @@ fn build_video_pipeline() -> Result<
 > {
     use gstreamer::prelude::*;
     use gstreamer_app::{AppSink, AppSrc};
-    let pipeline_str = "appsrc name=src format=time is-live=true block=false do-timestamp=true \
+    let pipeline_str = "appsrc name=src format=time is-live=true block=true do-timestamp=false \
                         ! video/x-h264,stream-format=byte-stream,alignment=au \
                         ! h264parse config-interval=1 \
                         ! mpegtsmux alignment=7 \
-                        ! appsink name=sink drop=true sync=false max-buffers=1 emit-signals=false";
+                        ! appsink name=sink drop=false sync=false max-buffers=0 emit-signals=false";
     let p = gstreamer::parse::launch(pipeline_str).map_err(|_| ())?;
     let pipeline = p.downcast::<gstreamer::Pipeline>().map_err(|_| ())?;
     let appsrc = pipeline
@@ -812,7 +812,7 @@ async fn stream_handler(
 
     gstreamer::init().ok();
 
-    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(2048);
     let tx_alive = tx.clone();
 
     let setup_pipeline = |pipeline: &gstreamer::Pipeline,
@@ -825,12 +825,13 @@ async fn stream_handler(
             .build();
         appsrc.set_caps(Some(&caps));
         appsrc.set_format(gstreamer::Format::Time);
-        appsrc.set_max_bytes(128 * 1024);
-        appsrc.set_block(false);
+        appsrc.set_do_timestamp(false);
+        appsrc.set_max_bytes(4 * 1024 * 1024);
+        appsrc.set_block(true);
 
         appsink.set_sync(false);
-        appsink.set_drop(true);
-        appsink.set_max_buffers(1);
+        appsink.set_drop(false);
+        appsink.set_max_buffers(0);
 
         appsink.set_callbacks(
             AppSinkCallbacks::builder()
