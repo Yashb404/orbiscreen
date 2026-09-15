@@ -374,7 +374,7 @@ pub fn run_accessory_bridge(
     );
 
     let (prio_tx, prio_rx) = std::sync::mpsc::channel::<Vec<u8>>();
-    let (video_tx, video_rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(8);
+    let (video_tx, video_rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(64);
     let running_writer = running.clone();
     let fd_writer = fd;
     let writer_handle = std::thread::spawn(move || {

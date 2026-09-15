@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.28.3] - 2026-09-16
+
+Fix tablet black screen and AOA USB disconnect (`os error 71`) by dynamically discovering and binding asynchronous Wayland virtual outputs in damage pump, pre-seeding capture pipeline with initial black frame in cap pump to eliminate encoder and client stream starvation, adding automatic runtime fallback from failing hardware encoders to software x264 with GStreamer bus sync handler error logging, and expanding AOA video sync channel buffer capacity.
+
+### 🐛 Bug Fixes
+- **Fix Tablet Black Screen & Virtual Display Damage Pump**:
+  - Dynamically re-scan and bind newly created or asynchronously enabled `wl_output` globals inside the damage pump wait loop, ensuring virtual outputs like `Virtual-ORBISCREEN` are discovered after KWin completes output activation.
+  - Enhance output matching in damage pump with substring and virtual connector fallbacks, preventing premature damage pump thread exits.
+  - Seed capture pipeline with an initial black frame and pre-seed `keepalive_frame` in both primary and secondary display loops, ensuring GStreamer encoder immediately generates SPS/PPS and IDR keyframe packets without waiting for initial desktop damage.
+- **Hardware Encoder Runtime Fallback & Error Visibility**:
+  - Implement automatic runtime fallback in `Encoder::new` from failing hardware encoders (NVENC/VAAPI) to software `x264enc` if initialization fails or emits immediate bus errors.
+  - Add GStreamer pipeline bus sync handler to log detailed encoder warnings and errors in real-time.
+- **Prevent AOA USB Protocol Disconnect (os error 71)**:
+  - Increase AOA video `sync_channel` buffer capacity from 8 to 64 chunks (1 MB buffer), eliminating packet drop and buffer starvation during high-bitrate IDR keyframe bursts.
+
+### 📦 Packaging & Versions
+- **Cargo Workspace**: Bumped workspace package version to `0.28.3`.
+- **Android Client**: Incremented `versionCode` to `96`; updated `versionName` to `"0.28.3"`.
+- **Tauri GUI**: Updated `tauri.conf.json` version to `0.28.3`.
+- **PKGBUILD**: Bumped `pkgver` to `0.28.3`.
+- **debian/changelog**: Added `0.28.3-1` release entry for Ubuntu noble.
+- **data/orbiscreen-copr.spec**: Bumped version to `0.28.3`.
+
+---
+
 ## [v0.28.2] - 2026-09-15
 
 Fix broken pipe error on host session lock via client shutdown notification, eliminate progressive streaming lag and frame drops over time by expanding video broadcast capacity and eliminating GStreamer callback stalls, resolve UDP probe tick mutex contention, and prevent UDP presence oscillation with a 2-second grace period.

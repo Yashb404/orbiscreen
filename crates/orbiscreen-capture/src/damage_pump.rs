@@ -64,12 +64,14 @@ fn run(
         .bind(&qh, 1..=3, ())
         .map_err(|e| format!("layer shell unsupported: {e}"))?;
 
+    let mut bound_outputs = std::collections::HashSet::new();
     for output_global in globals
         .contents()
         .clone_list()
         .into_iter()
         .filter(|g| g.interface == "wl_output")
     {
+        bound_outputs.insert(output_global.name);
         let _: wl_output::WlOutput =
             globals
                 .registry()
@@ -80,6 +82,9 @@ fn run(
         .map_err(|e| format!("roundtrip: {e}"))?;
 
     let find_target = |state: &PumpState| -> Option<wl_output::WlOutput> {
+        let is_sec = target_output
+            .as_deref()
+            .map_or(false, |t| t.contains('2'));
         if let Some(ref name_target) = target_output {
             let clean_target = name_target.trim().to_uppercase();
             let exact = state
@@ -87,31 +92,44 @@ fn run(
                 .iter()
                 .find(|(_, name)| name.to_uppercase() == clean_target)
                 .map(|(proxy, _)| proxy.clone());
-            exact.or_else(|| {
-                state
-                    .output_names
-                    .iter()
-                    .find(|(_, name)| {
-                        let upper = name.to_uppercase();
-                        let upper_has_2 = upper.contains('2');
-                        let target_has_2 = clean_target.contains('2');
-                        if upper_has_2 != target_has_2 {
-                            return false;
-                        }
-                        upper.contains(&clean_target) || clean_target.contains(&upper)
-                    })
-                    .map(|(proxy, _)| proxy.clone())
-            })
-        } else {
-            state
+            if exact.is_some() {
+                return exact;
+            }
+            let sub = state
                 .output_names
                 .iter()
                 .find(|(_, name)| {
                     let upper = name.to_uppercase();
-                    !upper.contains('2') && upper.contains(OUTPUT_HINT)
+                    let upper_has_2 = upper.contains('2');
+                    if upper_has_2 != is_sec {
+                        return false;
+                    }
+                    upper.contains(&clean_target) || clean_target.contains(&upper)
                 })
-                .map(|(proxy, _)| proxy.clone())
+                .map(|(proxy, _)| proxy.clone());
+            if sub.is_some() {
+                return sub;
+            }
         }
+        state
+            .output_names
+            .iter()
+            .find(|(_, name)| {
+                let upper = name.to_uppercase();
+                let upper_has_2 = upper.contains('2');
+                if upper_has_2 != is_sec {
+                    return false;
+                }
+                upper.contains(OUTPUT_HINT) || upper.starts_with("VIRTUAL")
+            })
+            .map(|(proxy, _)| proxy.clone())
+            .or_else(|| {
+                state
+                    .output_names
+                    .iter()
+                    .find(|(_, name)| name.to_uppercase().contains("VIRTUAL"))
+                    .map(|(proxy, _)| proxy.clone())
+            })
     };
 
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -119,6 +137,19 @@ fn run(
     while target.is_none() && std::time::Instant::now() < deadline {
         if stop.load(Ordering::Relaxed) {
             return Ok(());
+        }
+        let new_outputs: Vec<_> = globals
+            .contents()
+            .clone_list()
+            .into_iter()
+            .filter(|g| g.interface == "wl_output" && !bound_outputs.contains(&g.name))
+            .collect();
+        for output_global in new_outputs {
+            bound_outputs.insert(output_global.name);
+            let _: wl_output::WlOutput =
+                globals
+                    .registry()
+                    .bind(output_global.name, output_global.version.min(4), &qh, ());
         }
         let _ = queue.roundtrip(&mut state);
         target = find_target(&state);
@@ -131,6 +162,9 @@ fn run(
         let hint = target_output.as_deref().unwrap_or(OUTPUT_HINT);
         return Err(format!("no virtual output matching '{hint}' found"));
     };
+    if let Some((_, name)) = state.output_names.iter().find(|(p, _)| p == &output) {
+        tracing::info!("damage pump attached to Wayland output: {name}");
+    }
 
     let surface = compositor.create_surface(&qh, ());
     let input_region: wl_region::WlRegion = compositor.create_region(&qh, ());
@@ -180,9 +214,13 @@ fn run(
         .and_then(|v| v.checked_mul(2))
         .filter(|v| *v <= i32::MAX as i64)
         .ok_or("configured surface too large for the damage pump")? as i32;
-    let file = anonymous_shm_file()?;
+    let mut file = anonymous_shm_file()?;
     file.set_len(u64::try_from(pool_size).map_err(|e| format!("shm size: {e}"))?)
         .map_err(|e| format!("shm ftruncate: {e}"))?;
+    let offset = (pool_size / 2) as u64;
+    if std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(offset)).is_ok() {
+        let _ = std::io::Write::write_all(&mut file, &[1, 0, 0, 1]);
+    }
     let pool = shm.create_pool(file.as_fd(), pool_size, &qh, ());
     let buffer_a = pool.create_buffer(0, width, height, stride, wl_shm::Format::Argb8888, &qh, ());
     let buffer_b = pool.create_buffer(

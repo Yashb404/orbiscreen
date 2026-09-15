@@ -9,6 +9,7 @@
 # ── Metadata ──
 Name:           orbiscreen
 Version:        0.28.2
+Version:        0.28.3
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -142,6 +143,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Wed Sep 16 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.3-1
+- Release 0.28.3: Fix tablet black screen by dynamically scanning and binding asynchronous Wayland outputs in damage pump; pre-seed capture pipeline with initial black frame in cap_pump to prevent encoder and stream starvation; add automatic runtime fallback from failing hardware encoders to software x264; add GStreamer bus sync handler for real-time encoder error reporting; expand AOA video sync_channel buffer capacity to 64 chunks.
+
 * Tue Sep 15 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.2-1
 - Release 0.28.2: Fix broken pipe error on host session lock via client shutdown notification; prevent GStreamer AppSink callback stalls with try_send; expand broadcast video channel capacity from 8 to 64 slots; eliminate UDP hub probe tick mutex contention during network I/O; add 2-second grace period to UDP client TTL prune; request IDR on UDP hub broadcast lag; optimize keepalive frame snapshot memory footprint with Arc slice buffer.
 

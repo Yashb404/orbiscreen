@@ -2213,13 +2213,16 @@ async fn run_secondary_display_session(
     });
 
     let encoder_for_pump = Arc::clone(&encoder);
+    let initial_black = vec![0u8; (actual_dims.0 as usize) * (actual_dims.1 as usize) * 4];
+    let _ = encoder.push_frame(&initial_black, actual_dims.0, actual_dims.1, 0);
     let cap_pump = tokio::spawn(async move {
         let encoder = encoder_for_pump;
         let frame_dur = Encoder::frame_duration_ns(spec.refresh_rate_hz);
         const KEEPALIVE: std::time::Duration = std::time::Duration::from_millis(100);
         let started = std::time::Instant::now();
         let mut last_pts_ns: u64 = frame_dur;
-        let mut keepalive_frame: Option<(u32, u32, Vec<u8>)> = None;
+        let mut keepalive_frame: Option<(u32, u32, Vec<u8>)> =
+            Some((actual_dims.0, actual_dims.1, initial_black));
         let mut last_snapshot: Option<std::time::Instant> = None;
         loop {
             let outcome = match tokio::time::timeout(KEEPALIVE, source.next_frame()).await {
@@ -2649,13 +2652,17 @@ async fn run_start(
     let frame_count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     let fc = frame_count.clone();
     let encoder_for_pump = Arc::clone(&encoder);
+    let initial_black: Arc<[u8]> =
+        Arc::from(vec![0u8; (actual_dims.0 as usize) * (actual_dims.1 as usize) * 4].into_boxed_slice());
+    let _ = encoder.push_frame(initial_black.as_ref(), actual_dims.0, actual_dims.1, 0);
     let cap_pump = tokio::spawn(async move {
         let encoder = encoder_for_pump;
         let frame_dur = Encoder::frame_duration_ns(spec.refresh_rate_hz);
         const KEEPALIVE: std::time::Duration = std::time::Duration::from_millis(100);
         let started = std::time::Instant::now();
         let mut last_pts_ns: u64 = frame_dur;
-        let mut keepalive_frame: Option<(u32, u32, Arc<[u8]>)> = None;
+        let mut keepalive_frame: Option<(u32, u32, Arc<[u8]>)> =
+            Some((actual_dims.0, actual_dims.1, initial_black));
         let mut last_snapshot: Option<std::time::Instant> = None;
         loop {
             let outcome = match tokio::time::timeout(KEEPALIVE, source.next_frame()).await {

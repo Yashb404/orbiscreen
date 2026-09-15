@@ -215,6 +215,23 @@ impl Encoder {
     pub fn new(params: EncodeParams) -> Result<Self, EncodeError> {
         init()?;
         let (kind, encoder_el) = detect_available(params.kind);
+        match Self::build_pipeline(&params, kind, encoder_el) {
+            Ok(enc) => Ok(enc),
+            Err(e) if kind != EncoderKind::X264 => {
+                warn!(
+                    "Hardware encoder {encoder_el} failed to initialize ({e}); falling back to software x264"
+                );
+                Self::build_pipeline(&params, EncoderKind::X264, EncoderKind::X264.gst_element())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn build_pipeline(
+        params: &EncodeParams,
+        kind: EncoderKind,
+        encoder_el: &'static str,
+    ) -> Result<Self, EncodeError> {
         info!(?kind, element = encoder_el, "Using GStreamer encoder");
         let encoder = make_element(encoder_el)?;
 
@@ -399,9 +416,52 @@ impl Encoder {
                 .build(),
         );
 
+        if let Some(bus) = pipeline.bus() {
+            bus.set_sync_handler(|_bus, msg| {
+                match msg.view() {
+                    gstreamer::MessageView::Error(err) => {
+                        tracing::error!(
+                            target: "orbiscreen_encode",
+                            "GStreamer encoder error: {} (debug: {})",
+                            err.error(),
+                            err.debug().unwrap_or_default()
+                        );
+                    }
+                    gstreamer::MessageView::Warning(warn) => {
+                        tracing::warn!(
+                            target: "orbiscreen_encode",
+                            "GStreamer encoder warning: {} (debug: {})",
+                            warn.error(),
+                            warn.debug().unwrap_or_default()
+                        );
+                    }
+                    _ => {}
+                }
+                gstreamer::BusSyncReply::Drop
+            });
+        }
+
         pipeline
             .set_state(gstreamer::State::Playing)
             .map_err(|e| EncodeError::Pipeline(format!("set_state Playing: {e}")))?;
+
+        if kind != EncoderKind::X264 {
+            if let Some(bus) = pipeline.bus() {
+                if let Some(msg) = bus.timed_pop_filtered(
+                    gstreamer::ClockTime::from_mseconds(50),
+                    &[gstreamer::MessageType::Error],
+                ) {
+                    if let gstreamer::MessageView::Error(err) = msg.view() {
+                        let _ = pipeline.set_state(gstreamer::State::Null);
+                        return Err(EncodeError::Pipeline(format!(
+                            "{}: {}",
+                            err.error(),
+                            err.debug().unwrap_or_default()
+                        )));
+                    }
+                }
+            }
+        }
 
         Ok(Self {
             pipeline,
@@ -622,5 +682,47 @@ mod tests {
             encoder.request_keyframe();
             encoder.stop();
         }
+    }
+
+    #[test]
+    fn encodes_frame_and_emits_keyframe() {
+        init().unwrap();
+        let mut encoder = match Encoder::new(EncodeParams {
+            kind: EncoderKind::X264,
+            bitrate_kbps: 1000,
+            width: 64,
+            height: 64,
+            framerate: 30,
+        }) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        let mut rx = encoder.subscribe().unwrap();
+        let dummy_frame = vec![128u8; 64 * 64 * 4];
+        for i in 0..10 {
+            let pts = i * 33_333_333;
+            if i == 4 {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                encoder.request_keyframe();
+            }
+            if encoder.push_frame(&dummy_frame, 64, 64, pts).is_err() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let mut received = 0;
+        let mut keyframes = 0;
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_millis(1000) {
+            if let Ok(chunk) = rx.try_recv() {
+                received += 1;
+                if chunk.is_keyframe {
+                    keyframes += 1;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(received > 0);
+        assert!(keyframes > 0);
     }
 }

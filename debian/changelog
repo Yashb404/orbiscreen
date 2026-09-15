@@ -1,3 +1,14 @@
+orbiscreen (0.28.3-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.28.3 for Ubuntu noble.
+  * Fix tablet black screen by dynamically scanning and binding asynchronous Wayland outputs in damage pump.
+  * Pre-seed capture pipeline with initial black frame in cap_pump to prevent encoder and stream starvation.
+  * Add automatic runtime fallback from failing hardware encoders to software x264.
+  * Add GStreamer pipeline bus sync handler for real-time encoder warning and error reporting.
+  * Expand AOA video sync_channel buffer capacity to 64 chunks to prevent frame drops on keyframe bursts.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Wed, 16 Sep 2026 01:15:00 +0300
+
 orbiscreen (0.28.2-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.28.2 for Ubuntu noble.
