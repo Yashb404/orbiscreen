@@ -244,7 +244,8 @@ impl Transport {
         idr_tx: Option<mpsc::Sender<()>>,
     ) -> Result<(), TransportError> {
         let input_tx = self.input_tx;
-        let (video_tx, _video_rx) = tokio::sync::broadcast::channel::<H264Packet>(8);
+        let (video_tx, _video_rx) = tokio::sync::broadcast::channel::<H264Packet>(64);
+        let (client_shutdown_tx, _) = tokio::sync::broadcast::channel::<()>(16);
         let state = AppState {
             config: self.cfg.clone(),
             input_tx,
@@ -258,6 +259,7 @@ impl Transport {
             version: env!("CARGO_PKG_VERSION"),
             started: std::time::Instant::now(),
             idr_tx,
+            client_shutdown_tx,
         };
         let app = build_router(state.clone());
         let listener = TcpListener::bind(("0.0.0.0", self.cfg.signaling_port))
@@ -376,6 +378,7 @@ struct AppState {
     version: &'static str,
     started: std::time::Instant,
     idr_tx: Option<mpsc::Sender<()>>,
+    client_shutdown_tx: tokio::sync::broadcast::Sender<()>,
 }
 
 fn build_router(state: AppState) -> Router {
@@ -592,6 +595,7 @@ async fn api_control(
             let ok = run_command("loginctl", &["lock-session"]).await
                 || run_command("xdg-screensaver", &["lock"]).await;
             if ok {
+                let _ = state.client_shutdown_tx.send(());
                 info!("host control: session locked");
                 (StatusCode::OK, Json(serde_json::json!({"ok": true})))
             } else {
@@ -808,7 +812,7 @@ async fn stream_handler(
 
     gstreamer::init().ok();
 
-    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(8);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(16);
     let tx_alive = tx.clone();
 
     let setup_pipeline = |pipeline: &gstreamer::Pipeline,
@@ -834,8 +838,14 @@ async fn stream_handler(
                     Ok(sample) => {
                         if let Some(buffer) = sample.buffer() {
                             if let Ok(map) = buffer.map_readable() {
-                                if tx.blocking_send(map.to_vec()).is_err() {
-                                    return Err(gstreamer::FlowError::Eos);
+                                match tx.try_send(map.to_vec()) {
+                                    Ok(()) => {}
+                                    Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                                        debug!("stream client buffer full, dropping mpeg-ts chunk");
+                                    }
+                                    Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                        return Err(gstreamer::FlowError::Eos);
+                                    }
                                 }
                             }
                         }
@@ -902,6 +912,7 @@ async fn stream_handler(
     let refresh_hz = state.refresh_hz.max(1);
     let nominal_frame_ns = 1_000_000_000u64 / u64::from(refresh_hz);
     let mut video_rx = state.video_tx.subscribe();
+    let mut client_shutdown_rx = state.client_shutdown_tx.subscribe();
 
     tokio::spawn(async move {
         let _pipeline_guard = PipelineGuard(pipeline_for_task);
@@ -915,17 +926,24 @@ async fn stream_handler(
                 debug!("stream client disconnected");
                 break;
             }
-            let pkt = match video_rx.recv().await {
-                Ok(pkt) => pkt,
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    debug!("stream client lagged {n} packets; waiting for keyframe");
-                    wait_keyframe = true;
-                    if let Some(tx) = &idr_tx {
-                        let _ = tx.try_send(());
-                    }
-                    continue;
+            let pkt = tokio::select! {
+                _ = client_shutdown_rx.recv() => {
+                    debug!("stream client shutting down due to session lock");
+                    break;
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                res = video_rx.recv() => match res {
+                    Ok(pkt) => pkt,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        debug!("stream client lagged {n} packets; waiting for keyframe");
+                        wait_keyframe = true;
+                        last_pkt_pts_ns = None;
+                        if let Some(tx) = &idr_tx {
+                            let _ = tx.try_send(());
+                        }
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                },
             };
             if wait_keyframe {
                 if !pkt.is_keyframe {

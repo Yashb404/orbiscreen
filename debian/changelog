@@ -1,3 +1,16 @@
+orbiscreen (0.28.2-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.28.2 for Ubuntu noble.
+  * Fix broken pipe error on host session lock via client shutdown notification.
+  * Prevent GStreamer AppSink callback stalls by switching to non-blocking try_send.
+  * Increase broadcast video channel capacity from 8 to 64 slots to prevent IDR cascades.
+  * Eliminate UDP hub probe tick mutex contention during network I/O.
+  * Add 2-second grace period to UDP client TTL prune to prevent presence oscillation.
+  * Request IDR keyframe on UDP hub broadcast lag recovery.
+  * Optimize keepalive frame snapshot memory footprint with Arc slice buffer.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Tue, 15 Sep 2026 21:45:00 +0300
+
 orbiscreen (0.28.1-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.28.1 for Ubuntu noble.

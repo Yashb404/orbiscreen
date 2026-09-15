@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.28.2] - 2026-09-15
+
+Fix broken pipe error on host session lock via client shutdown notification, eliminate progressive streaming lag and frame drops over time by expanding video broadcast capacity and eliminating GStreamer callback stalls, resolve UDP probe tick mutex contention, and prevent UDP presence oscillation with a 2-second grace period.
+
+### 🐛 Bug Fixes
+- **Host Session Lock Broken Pipe Resolution**:
+  - Add broadcast client shutdown notification (`client_shutdown_tx`) triggered by `api_control` when host session is locked via `loginctl` or `xdg-screensaver`, cleanly terminating active HTTP streaming connections before the remote TCP socket closes.
+  - Replace blocking `tx.blocking_send()` with non-blocking `tx.try_send()` in the GStreamer MPEG-TS AppSink callback, preventing slow or disconnected streaming clients from stalling the GStreamer streaming thread and freezing the encode pipeline.
+- **Eliminate Progressive Stream Lag & Frame Drops**:
+  - Expand video distribution broadcast channel capacity from 8 to 64 packets (~1.07s headroom at 60fps), eliminating the buffer starvation bottleneck and breaking the positive-feedback loop of recurrent IDR keyframe requests.
+  - Increase per-client MPEG-TS channel buffer from 8 to 16 chunks to absorb bursty network I/O.
+  - Reset `last_pkt_pts_ns = None` when recovering from broadcast lag to ensure timestamp deltas are calculated accurately without stale frame gaps.
+  - Eliminate UDP hub probe tick mutex contention by checking probe deadlines and releasing the clients lock before sending datagrams over the network.
+  - Request an immediate IDR keyframe when recovering from broadcast lag in the UDP hub to ensure smooth decoder recovery.
+  - Implement a 2-second grace period in UDP client TTL pruning to absorb transient network jitter without triggering spurious client disconnect/reconnect cycles and IDR storms.
+  - Optimize daemon keepalive frame snapshot memory allocation by storing an `Arc<[u8]>` slice buffer instead of repeatedly allocating full frame vectors.
+
+### 📦 Packaging & Versions
+- **Cargo Workspace**: Bumped workspace package version to `0.28.2`.
+- **Android Client**: Incremented `versionCode` to `95`; updated `versionName` to `"0.28.2"`.
+- **Tauri GUI**: Updated `tauri.conf.json` version to `0.28.2`.
+- **PKGBUILD**: Bumped `pkgver` to `0.28.2`.
+- **debian/changelog**: Added `0.28.2-1` release entry for Ubuntu noble.
+- **data/orbiscreen-copr.spec**: Bumped version to `0.28.2`.
+
+---
+
 ## [v0.28.1] - 2026-09-14
 
 Drop stale frames and eliminate stream latency accumulation over Wi-Fi and USB AOA, clamp PTS timeline desync across frame gaps, multi-thread software color conversion, and constrain transport buffer queues (PR [#78](https://github.com/shadow-x78/orbiscreen/pull/78) by [@Yashb404](https://github.com/Yashb404)).

@@ -8,7 +8,7 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.28.1
+Version:        0.28.2
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -142,6 +142,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Tue Sep 15 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.2-1
+- Release 0.28.2: Fix broken pipe error on host session lock via client shutdown notification; prevent GStreamer AppSink callback stalls with try_send; expand broadcast video channel capacity from 8 to 64 slots; eliminate UDP hub probe tick mutex contention during network I/O; add 2-second grace period to UDP client TTL prune; request IDR on UDP hub broadcast lag; optimize keepalive frame snapshot memory footprint with Arc slice buffer.
+
 * Mon Sep 14 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.1-1
 - Release 0.28.1: Drop stale frames and eliminate stream latency accumulation (PR #78 by @Yashb404); configure HTTP MPEG-TS pipeline with is-live=true and appsink drop=true max-buffers=1; clamp PTS timeline desync across frame gaps (>250ms) to nominal frame time; reduce AOA USB accessory sync_channel capacity from 64 to 8 chunks; multi-thread software color conversion with n-threads=4 on videoconvert.
 

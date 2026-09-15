@@ -2655,7 +2655,7 @@ async fn run_start(
         const KEEPALIVE: std::time::Duration = std::time::Duration::from_millis(100);
         let started = std::time::Instant::now();
         let mut last_pts_ns: u64 = frame_dur;
-        let mut keepalive_frame: Option<(u32, u32, Vec<u8>)> = None;
+        let mut keepalive_frame: Option<(u32, u32, Arc<[u8]>)> = None;
         let mut last_snapshot: Option<std::time::Instant> = None;
         loop {
             let outcome = match tokio::time::timeout(KEEPALIVE, source.next_frame()).await {
@@ -2668,7 +2668,7 @@ async fn run_start(
                     let next_min = last_pts_ns.saturating_add(1);
                     let pts_ns = now_ns.max(next_min).min(now_ns.saturating_add(frame_dur));
                     last_pts_ns = pts_ns;
-                    if let Err(e) = encoder.push_frame(data, *width, *height, pts_ns) {
+                    if let Err(e) = encoder.push_frame(data.as_ref(), *width, *height, pts_ns) {
                         match e {
                             orbiscreen_encode::EncodeError::Flushing
                             | orbiscreen_encode::EncodeError::Eos => {
@@ -2695,7 +2695,7 @@ async fn run_start(
                     let _ = fc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let (width, height) = (frame.width, frame.height);
                     if last_snapshot.map_or(true, |t| t.elapsed() >= KEEPALIVE) {
-                        keepalive_frame = Some((width, height, frame.data.to_vec()));
+                        keepalive_frame = Some((width, height, Arc::from(&frame.data[..])));
                         last_snapshot = Some(std::time::Instant::now());
                     }
                     let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);

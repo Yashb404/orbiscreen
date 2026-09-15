@@ -389,7 +389,7 @@ impl Encoder {
                         })
                         .is_err()
                     {
-                        tracing::debug!("encoded chunk dropped: consumer channel full");
+                        tracing::warn!("encoded chunk dropped: consumer channel full");
                     }
                     Ok(gstreamer::FlowSuccess::Ok)
                 })

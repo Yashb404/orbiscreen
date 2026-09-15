@@ -412,6 +412,7 @@ pub fn fragment_video(
 
 struct UdpClient {
     last_seen: Instant,
+    prune_pending: Option<Instant>,
     pmtu: PmtuSearch,
     probe_id: u16,
     probe_deadline: Option<Instant>,
@@ -426,6 +427,7 @@ fn new_client(limits: UdpLimits) -> UdpClient {
     };
     UdpClient {
         last_seen: Instant::now(),
+        prune_pending: None,
         pmtu,
         probe_id: 0,
         probe_deadline: None,
@@ -659,41 +661,75 @@ pub async fn run_udp_hub(
             _ = shutdown.changed() => break,
             _ = prune.tick() => {
                 let mut map = clients.lock().await;
-                let before = map.len();
-                map.retain(|_, c| c.last_seen.elapsed() < CLIENT_TTL);
-                let dropped = before.saturating_sub(map.len());
+                let now = Instant::now();
+                let mut dropped = 0;
+                map.retain(|_, c| {
+                    if c.last_seen.elapsed() < CLIENT_TTL {
+                        c.prune_pending = None;
+                        true
+                    } else if let Some(pending) = c.prune_pending {
+                        if pending.elapsed() >= Duration::from_secs(2) {
+                            dropped += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    } else {
+                        c.prune_pending = Some(now);
+                        true
+                    }
+                });
                 for _ in 0..dropped {
                     stats.client_stopped();
                 }
             }
             _ = probe_tick.tick() => {
                 let now = Instant::now();
-                let mut map = clients.lock().await;
-                for (addr, client) in map.iter_mut() {
-                    let expired = client
-                        .probe_deadline
-                        .is_some_and(|deadline| now >= deadline);
-                    if expired {
-                        let before = client.pmtu.current_probe();
-                        client.probe_deadline = None;
-                        client.pmtu.on_timeout();
-                        if client.pmtu.current_probe() != before {
-                            bump_probe_id(client);
+                let expired_addrs: Vec<SocketAddr> = {
+                    let map = clients.lock().await;
+                    map.iter()
+                        .filter(|(_, client)| client.probe_deadline.is_some_and(|deadline| now >= deadline))
+                        .map(|(addr, _)| *addr)
+                        .collect()
+                };
+                for addr in expired_addrs {
+                    let mut should_idr = false;
+                    {
+                        let mut map = clients.lock().await;
+                        if let Some(client) = map.get_mut(&addr) {
+                            let expired = client
+                                .probe_deadline
+                                .is_some_and(|deadline| now >= deadline);
+                            if expired {
+                                let before = client.pmtu.current_probe();
+                                client.probe_deadline = None;
+                                client.pmtu.on_timeout();
+                                if client.pmtu.current_probe() != before {
+                                    bump_probe_id(client);
+                                }
+                                if client.pmtu.current_probe().is_some() {
+                                    send_probe(&sock, addr, client, limits).await;
+                                }
+                                if client.pmtu.is_complete() {
+                                    announce_pmtu(&sock, addr, client, limits).await;
+                                    should_idr = true;
+                                }
+                            }
                         }
-                        if client.pmtu.current_probe().is_some() {
-                            send_probe(&sock, *addr, client, limits).await;
-                        }
-                        if client.pmtu.is_complete() {
-                            announce_pmtu(&sock, *addr, client, limits).await;
-                            request_idr_sender(idr_tx.as_ref());
-                        }
+                    }
+                    if should_idr {
+                        request_idr_sender(idr_tx.as_ref());
                     }
                 }
             }
             pkt = video_rx.recv() => {
                 let pkt = match pkt {
                     Ok(p) => p,
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        debug!("UDP hub lagged {n} packets; requesting IDR");
+                        request_idr_sender(idr_tx.as_ref());
+                        continue;
+                    }
                     Err(broadcast::error::RecvError::Closed) => break,
                 };
                 let targets: Vec<(SocketAddr, usize)> = {
@@ -743,6 +779,7 @@ async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
             let joining = !map.contains_key(&addr);
             let client = map.entry(addr).or_insert_with(|| new_client(ctx.limits));
             client.last_seen = Instant::now();
+            client.prune_pending = None;
             if joining {
                 ctx.stats.client_started();
                 info!(
@@ -779,6 +816,7 @@ async fn handle_incoming(buf: &[u8], addr: SocketAddr, ctx: &IncomingCtx<'_>) {
                 return;
             };
             client.last_seen = Instant::now();
+            client.prune_pending = None;
             let recv = recv as usize;
             match apply_probe_ack(client, id, recv) {
                 AckEffect::Ignored => {}
@@ -817,6 +855,7 @@ async fn touch_client(
     let mut map = clients.lock().await;
     if let Some(c) = map.get_mut(&addr) {
         c.last_seen = Instant::now();
+        c.prune_pending = None;
         true
     } else {
         false
