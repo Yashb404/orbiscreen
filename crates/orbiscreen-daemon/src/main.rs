@@ -1238,6 +1238,8 @@ async fn run_start_per_client(
         encode_kind,
         bitrate_kbps: cfg.encode.bitrate_kbps,
         refresh_hz: cfg.display.refresh_rate_hz,
+        default_width: cfg.display.width,
+        default_height: cfg.display.height,
     });
 
     let stats = std::sync::Arc::new(Stats::default());

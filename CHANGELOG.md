@@ -2,17 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v0.28.9] - 2026-09-16
 
-### ✨ Added
-- **Per-client KWin virtual outputs**:
-  - The daemon no longer creates a virtual monitor at start. Each client calls `POST /api/session` with name, a stable device key, and native size and gets its own output (`Virtual-Orbi-<key>`).
-  - Two tablets of the same model keep separate KWin layouts. The output closes on `DELETE /api/session` or UDP Bye.
+Introduce per-client KWin virtual displays and isolated touch scoping to support multiple simultaneous tablets, expand KWin input device introspection beyond event63, add automatic fallback session creation on attach for full backwards compatibility with legacy clients, and bump the release matrix across all platforms.
 
-### 🐛 Fixed
-- **Dual-tablet touch stays on each virtual output**:
-  - `/input` carries `X-Orbiscreen-Session`. KWin bind introspects InputDevice nodes past `event63` (uinput often lands at `event256+`). Web touch mode posts absolute `Touch` instead of a relative mouse.
-  - Retry after a daemon restart opens a new session. An unknown session id no longer attaches to the only remaining display.
+### ✨ Features
+- **Per-client KWin virtual outputs (#79 by @sentinelt)**:
+  - The daemon dynamically creates dedicated virtual outputs per client (`Virtual-Orbi-<key>`) based on `POST /api/session` with device identity and native resolution.
+  - Multiple tablets can connect concurrently, each maintaining its own independent geometry, layout, and resolution.
+  - Virtual displays automatically tear down on `DELETE /api/session`, UDP Bye, or after an idle timeout.
+- **Isolated Touch Scoping (#79 by @sentinelt)**:
+  - Touch input carries `X-Orbiscreen-Session` and scopes to each client's specific virtual output so simultaneous users do not interfere with each other.
+  - Expanded KWin input device node introspection past `event63` (into `event256+`) to guarantee uinput binding on modern kernels.
+  - Web touch mode posts absolute `Touch` coordinates instead of relative mouse movement.
+- **Backwards Compatibility Fallback**:
+  - `DisplayCommand::Attach` automatically provisions and attaches to a default virtual session if called without a session ID and no active sessions exist, ensuring legacy Android APKs and direct stream consumers connect seamlessly.
+
+### 📦 Packaging & Versions
+- **Workspace & Packaging**:
+  - Bumped Cargo workspace package version to `0.28.9`.
+  - Incremented Android client `versionCode` to `102`; updated `versionName` to `"0.28.9"`.
+  - Updated `tauri.conf.json` version to `0.28.9`.
+  - Bumped PKGBUILD `pkgver` to `0.28.9`.
+  - Added `0.28.9-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+  - Synchronized documentation badges across all architecture and specification guides.
+
+---
 
 ## [v0.28.8] - 2026-09-16
 

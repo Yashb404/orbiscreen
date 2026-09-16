@@ -25,6 +25,8 @@ pub struct HubConfig {
     pub encode_kind: EncoderKind,
     pub bitrate_kbps: u32,
     pub refresh_hz: u32,
+    pub default_width: u32,
+    pub default_height: u32,
 }
 
 struct Session {
@@ -120,9 +122,36 @@ async fn handle_cmd(
         }
         DisplayCommand::Attach { id, reply } => {
             let chosen = resolve_id(sessions, id.as_deref());
-            let Some(sid) = chosen else {
-                let _ = reply.send(Err("no display session".into()));
-                return;
+            let sid = match chosen {
+                Some(sid) => sid,
+                None if (id.is_none() || id.as_deref() == Some("")) && sessions.is_empty() => {
+                    let w = if cfg.default_width > 0 {
+                        cfg.default_width
+                    } else {
+                        1920
+                    };
+                    let h = if cfg.default_height > 0 {
+                        cfg.default_height
+                    } else {
+                        1080
+                    };
+                    match open_session(cfg, "default".to_string(), None, w, h).await {
+                        Ok(session) => {
+                            let sid = session.info.id.clone();
+                            idle_at.insert(sid.clone(), tokio::time::Instant::now());
+                            sessions.insert(sid.clone(), session);
+                            sid
+                        }
+                        Err(e) => {
+                            let _ = reply.send(Err(format!("no display session: {e}")));
+                            return;
+                        }
+                    }
+                }
+                None => {
+                    let _ = reply.send(Err("no display session".into()));
+                    return;
+                }
             };
             if let Some(session) = sessions.get_mut(&sid) {
                 session.viewers = session.viewers.saturating_add(1);
