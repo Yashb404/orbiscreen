@@ -186,11 +186,9 @@ impl VirtualOutputLease {
             (guard.width, guard.height)
         };
         let capture = tokio::task::spawn_blocking(move || {
-            kwin_virtual::KwinVirtualCapture::open(kwin_virtual::KwinVirtualSpec {
-                width,
-                height,
-                output_name: None,
-            })
+            kwin_virtual::KwinVirtualCapture::open(kwin_virtual::KwinVirtualSpec::unnamed(
+                width, height,
+            ))
         })
         .await
         .map_err(|e| CaptureError::Io(format!("kwin-virtual unpark task: {e}")))??;
@@ -256,11 +254,16 @@ impl CaptureSession {
     ) -> Result<Self, CaptureError> {
         let name_clone = output_name.clone();
         let capture = tokio::task::spawn_blocking(move || {
-            kwin_virtual::KwinVirtualCapture::open(kwin_virtual::KwinVirtualSpec {
-                width,
-                height,
-                output_name: name_clone,
-            })
+            let spec = match name_clone {
+                Some(name) if !name.is_empty() => kwin_virtual::KwinVirtualSpec {
+                    width,
+                    height,
+                    names: vec![name],
+                    description: "Orbiscreen Virtual Display".into(),
+                },
+                _ => kwin_virtual::KwinVirtualSpec::unnamed(width, height),
+            };
+            kwin_virtual::KwinVirtualCapture::open(spec)
         })
         .await
         .map_err(|e| CaptureError::Io(format!("kwin-virtual open task: {e}")))??;

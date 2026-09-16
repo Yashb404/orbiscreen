@@ -200,12 +200,12 @@ Error: evdi kernel module is not installed
 
 **الأعراض:** يسجّل `orbiscreen start` رسالة `EVDI kernel module not active` ولا تريد بناء وحدة نواة.
 
-**الحل:** على KDE Plasma Wayland لا شيء إضافي مطلوب. مع الإعداد الافتراضي `[capture] preferred = "auto"` يطلب الـ daemon من KWin إنشاء مونيتور افتراضي (`Virtual-ORBISCREEN`، يظهر في إعدادات النظام ← إعداد العرض) عبر بروتوكول Wayland‏ `zkde_screencast_unstable_v1` ويبثه عبر PipeWire مباشرة، بلا root وبلا نافذة مشاركة. KWin لا يعرض هذا البروتوكول إلا للتنفيذيات المصرّح لها، لذا يحافظ الـ daemon على الملف `~/.local/share/applications/orbiscreen.kwin.desktop` (قابل للكتابة من المستخدم) ويحدّث ذاكرة KService تلقائياً؛ قد يستغرق التشغيل الأول ثوانٍ إضافية حتى يصبح الترخيص مرئياً.
+**الحل:** على KDE Plasma Wayland لا شيء إضافي مطلوب. مع الإعداد الافتراضي `[capture] preferred = "auto"` ينشئ الـ daemon مونيتوراً افتراضياً لكل عميل عبر بروتوكول Wayland‏ `zkde_screencast_unstable_v1` (الاسم الظاهر هو اسم الجهاز، والموصّل `Virtual-Orbi-<key>`) ويبثه عبر PipeWire مباشرة، بلا root وبلا نافذة مشاركة. KWin لا يعرض هذا البروتوكول إلا للتنفيذيات المصرّح لها، لذا يحافظ الـ daemon على الملف `~/.local/share/applications/orbiscreen.kwin.desktop` (قابل للكتابة من المستخدم) ويحدّث ذاكرة KService تلقائياً؛ قد يستغرق التشغيل الأول ثوانٍ إضافية حتى يصبح الترخيص مرئياً.
 
 ملاحظات:
 - يمكن فرض المسار عبر `[capture] preferred = "kwin-virtual"` (فشل صريح إن لم يتوفر) أو `"portal"` (إظهار نافذة المشاركة دائماً).
-- تختفي الشاشة الافتراضية عند إيقاف الـ daemon؛ هذا متوقع.
-- **ترى خلفية سطح المكتب فقط في البث؟** هذا صحيح: الشاشة الافتراضية هي *شاشة ثانية فارغة*. اسحب النوافذ إلى `Virtual-ORBISCREEN`، أو اجعل `[capture] preferred = "mirror"` لبث شاشتك الحقيقية بدلاً منها.
+- يختفي مخرج العميل عند انقطاعه، وتختفي كل المخارج عند إيقاف الـ daemon.
+- **ترى خلفية سطح المكتب فقط في البث؟** هذا صحيح: الشاشة الافتراضية هي *شاشة ثانية فارغة*. اسحب النوافذ إلى مخرج ذلك العميل (`Virtual-Orbi-<الجهاز>`)، أو اجعل `[capture] preferred = "mirror"` لبث شاشتك الحقيقية بدلاً منها.
 - على GNOME / wlroots البروتوكول غير موجود ويرجع `auto` تلقائياً إلى نافذة مشاركة portal.
 - أصبح EVDI اختيارياً (`preferred = "evdi"`)؛ لا يلمسه `auto` على Wayland إطلاقاً، لذا لن يظهر سطر `EVDI kernel module not active` القديم على KDE.
 

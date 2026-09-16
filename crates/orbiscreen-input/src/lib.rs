@@ -75,6 +75,7 @@ pub struct VirtualTouchscreenSpec {
     pub width: u32,
     pub height: u32,
     pub output_name: Option<String>,
+    pub device_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

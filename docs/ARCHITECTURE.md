@@ -52,7 +52,7 @@ graph TD
         U -->|"Touch"| N["InputDispatcher"]
         L -->|"Touch"| N
         N -->|"POST /input + Bearer token"| F
-        J -->|"POST /api/control"| F
+        J -->|"POST /api/session + /api/control"| F
     end
 ```
 
@@ -67,7 +67,7 @@ graph TD
 | `orbiscreen-capture` | Wayland Portal (ashpd) & X11 (x11rb) capture engines: **fallback source only** | `ashpd`, `x11rb` |
 | `orbiscreen-encode` | Hardware & software H.264 encoding pipelines | `gstreamer`, `gstreamer-app` |
 | `orbiscreen-input` | Reverse touch, stylus, and keyboard injection (uinput) | `evdev`, `ashpd` |
-| `orbiscreen-transport` | Axum HTTP `/stream` + token auth, UDP Annex-B (`udp_port`), mDNS, ADB reverse, `/api/info`, `/api/control`, `/health` | `axum`, `gstreamer`, `tokio`, `rand`, `base64` |
+| `orbiscreen-transport` | Axum HTTP `/stream` + token auth, UDP Annex-B (`udp_port`), mDNS, ADB reverse, `/api/session`, `/api/info`, `/api/control`, `/health` | `axum`, `gstreamer`, `tokio`, `rand`, `base64` |
 | `orbiscreen-daemon` | Main daemon binary, systemd integration & live D-Bus service | `zbus`, `clap`, `tokio` |
 
 ---

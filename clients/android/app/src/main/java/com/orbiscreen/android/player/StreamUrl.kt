@@ -7,7 +7,12 @@ import android.net.Uri
 import okhttp3.HttpUrl
 
 object StreamUrl {
-    fun build(host: String, port: Int, token: String = ""): Uri {
+    fun build(
+        host: String,
+        port: Int,
+        token: String = "",
+        session: String? = null,
+    ): Uri {
         var cleanHost = host.trim()
         if (cleanHost.startsWith("http://", ignoreCase = true)) {
             cleanHost = cleanHost.substring(7)
@@ -29,6 +34,9 @@ object StreamUrl {
         val cleanToken = token.trim()
         if (cleanToken.isNotBlank()) {
             httpUrlBuilder.addQueryParameter("token", cleanToken)
+        }
+        if (!session.isNullOrBlank()) {
+            httpUrlBuilder.addQueryParameter("session", session)
         }
 
         return Uri.parse(httpUrlBuilder.build().toString())

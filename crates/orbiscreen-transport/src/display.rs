@@ -1,0 +1,154 @@
+// Orbiscreen - display.rs (GPL-3.0-or-later)
+// https://github.com/shadow-x78/orbiscreen
+
+use tokio::sync::{mpsc, oneshot};
+
+use super::{H264Packet, IncomingInput};
+
+#[derive(Debug, Clone)]
+pub struct DisplayInfo {
+    pub id: String,
+    pub name: String,
+    pub connector: String,
+    pub width: u32,
+    pub height: u32,
+    pub encoder: String,
+}
+
+#[allow(missing_debug_implementations)]
+pub struct AttachedDisplay {
+    pub info: DisplayInfo,
+    pub video: tokio::sync::broadcast::Receiver<H264Packet>,
+}
+
+#[allow(missing_debug_implementations)]
+pub enum DisplayCommand {
+    Acquire {
+        name: String,
+        key: Option<String>,
+        width: u32,
+        height: u32,
+        reply: oneshot::Sender<Result<DisplayInfo, String>>,
+    },
+    Release {
+        id: String,
+    },
+    Attach {
+        id: Option<String>,
+        reply: oneshot::Sender<Result<AttachedDisplay, String>>,
+    },
+    Detach {
+        id: String,
+    },
+    Idr {
+        id: String,
+    },
+    Resize {
+        id: String,
+        width: u32,
+        height: u32,
+        reply: oneshot::Sender<Result<DisplayInfo, String>>,
+    },
+    Lookup {
+        id: Option<String>,
+        reply: oneshot::Sender<Option<DisplayInfo>>,
+    },
+    Input {
+        id: Option<String>,
+        event: IncomingInput,
+    },
+}
+
+#[derive(Clone)]
+#[allow(missing_debug_implementations)]
+pub struct DisplayCtl {
+    tx: mpsc::Sender<DisplayCommand>,
+}
+
+impl DisplayCtl {
+    pub fn new(tx: mpsc::Sender<DisplayCommand>) -> Self {
+        Self { tx }
+    }
+
+    pub fn sender(&self) -> mpsc::Sender<DisplayCommand> {
+        self.tx.clone()
+    }
+
+    pub async fn acquire(
+        &self,
+        name: String,
+        key: Option<String>,
+        width: u32,
+        height: u32,
+    ) -> Result<DisplayInfo, String> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(DisplayCommand::Acquire {
+                name,
+                key,
+                width,
+                height,
+                reply,
+            })
+            .await
+            .map_err(|_| "display hub stopped".to_string())?;
+        rx.await.map_err(|_| "display hub stopped".to_string())?
+    }
+
+    pub async fn release(&self, id: &str) {
+        let _ = self
+            .tx
+            .send(DisplayCommand::Release { id: id.to_string() })
+            .await;
+    }
+
+    pub async fn attach(&self, id: Option<String>) -> Result<AttachedDisplay, String> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(DisplayCommand::Attach { id, reply })
+            .await
+            .map_err(|_| "display hub stopped".to_string())?;
+        rx.await.map_err(|_| "display hub stopped".to_string())?
+    }
+
+    pub async fn detach(&self, id: &str) {
+        let _ = self
+            .tx
+            .send(DisplayCommand::Detach { id: id.to_string() })
+            .await;
+    }
+
+    pub async fn idr(&self, id: &str) {
+        let _ = self
+            .tx
+            .send(DisplayCommand::Idr { id: id.to_string() })
+            .await;
+    }
+
+    pub async fn resize(&self, id: &str, width: u32, height: u32) -> Result<DisplayInfo, String> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(DisplayCommand::Resize {
+                id: id.to_string(),
+                width,
+                height,
+                reply,
+            })
+            .await
+            .map_err(|_| "display hub stopped".to_string())?;
+        rx.await.map_err(|_| "display hub stopped".to_string())?
+    }
+
+    pub async fn lookup(&self, id: Option<String>) -> Option<DisplayInfo> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(DisplayCommand::Lookup { id, reply })
+            .await
+            .ok()?;
+        rx.await.ok().flatten()
+    }
+
+    pub async fn input(&self, id: Option<String>, event: IncomingInput) {
+        let _ = self.tx.send(DisplayCommand::Input { id, event }).await;
+    }
+}

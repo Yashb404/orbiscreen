@@ -19,12 +19,14 @@ The daemon advertises `udp_port` on `GET /api/info` (`signaling_port + 1`, defau
 
 ## Session
 
-1. Client sends **Hello** with the session token (same constant-time compare as HTTP Bearer).
+On KDE the host does not create a virtual output at daemon start. The client calls `POST /api/session` with `{ name, key, width, height }` (native pixels). `key` is a stable per-device id (Android: last 8 hex of `ANDROID_ID`; web: 8 hex in `localStorage`). That opens one output: the KScreen description is `name` (for example `Galaxy Tab S5e`) and the connector is `Virtual-Orbi-<key>` (for example `Virtual-Orbi-a1b2c3d4`). Two tablets with the same model name therefore get different connectors. KWin remembers position and scale by `connectorName` only — virtual outputs have no EDID — so the same device gets the same layout next time. If `key` is omitted, the host slugs `name` instead. If that connector is already enabled, the host tries `-2` then `-<pid>`. `DELETE /api/session?id=` or UDP **Bye** (type 10) closes that output.
+
+1. Client sends **Hello** with the session token (same constant-time compare as HTTP Bearer). An optional `\0` + session id attaches this UDP socket to that display.
 2. Host replies **Hello-Ack** and starts DPLPMTUD. The client waits 1.5 s and treats probes that arrive before the ack as control, not failure.
 3. Video is withheld until a datagram size is confirmed. Fragments then use that size.
 4. Client pings every 500 ms. Missing all packets for 4 s ends the UDP session.
 5. A gap or a lost fragment holds P-frames until the next IDR. The client sends **IDR**; the host reuses `POST /api/control` `action: idr`.
-6. Idle clients expire after 5 s without a packet. The last HTTP/UDP client also parks the KWin virtual output.
+6. Idle UDP clients expire after 5 s without a packet. The last viewer of a session closes that client's virtual output.
 
 ## Packet format
 
@@ -33,7 +35,7 @@ Every datagram starts with magic `ORB1` and a type byte. Multi-byte fields are l
 | Type | Name | Layout after magic+type |
 |------|------|-------------------------|
 | 1 | Video | `key u8`, `seq u16`, `frag u16`, `frags u16`, `pts_ns u64`, `sent_ns u64`, payload (28-byte header) |
-| 2 | Hello | UTF-8 token |
+| 2 | Hello | UTF-8 token, optional `\0` + session id |
 | 3 | Hello-Ack | empty |
 | 4 | Ping | `t0_ns u64` |
 | 5 | Pong | `t0_ns u64`, `host_ns u64` |
@@ -41,6 +43,7 @@ Every datagram starts with magic `ORB1` and a type byte. Multi-byte fields are l
 | 7 | Probe | `id u16`, zero pad to the probe size |
 | 8 | Probe-Ack | `id u16`, `recv u16` (bytes received) |
 | 9 | PMTU | `datagram u16` (confirmed size) |
+| 10 | Bye | optional UTF-8 session id |
 
 ## DPLPMTUD
 

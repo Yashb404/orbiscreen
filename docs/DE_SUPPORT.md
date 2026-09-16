@@ -56,7 +56,9 @@ ordered capture plan. The plan is logged on every `orbiscreen start`:
 
 - **Virtual display:** native, via `zkde_screencast_unstable_v1` or XDG Portal
   ScreenCast `SourceType::Virtual`. No root, no kernel module, no share dialog.
-  The monitor appears as `Virtual-ORBISCREEN`.
+  The monitor appears when a client connects. The KScreen description is the
+  device name; the connector is `Virtual-Orbi-<key>` (stable per device so
+  KWin remembers layout).
 - **Capture:** PipeWire stream from the virtual monitor.
 - **Input:** RemoteDesktop portal (the grant is remembered after the first
   run, no dialog afterwards).
@@ -192,7 +194,7 @@ preferred = "auto"
 | `portal` | Always the portal share dialog; pick any screen. |
 | `mirror` | Show your **real** desktop instead of a second monitor: pick the screen to mirror in the share dialog. |
 
-> A virtual display starts **empty** (desktop wallpaper only); that is what a second monitor is. Drag windows onto `Virtual-ORBISCREEN`, or use `mirror` to stream your actual screen.
+> A virtual display starts **empty** (desktop wallpaper only); that is what a second monitor is. Drag windows onto that client's output (`Virtual-Orbi-<device>` on KDE), or use `mirror` to stream your actual screen.
 
 ## Environment variables read by Orbiscreen
 

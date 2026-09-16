@@ -3,8 +3,11 @@
 
 pub mod adb;
 pub mod aoa;
+pub mod display;
 pub mod mdns;
 pub mod udp_stream;
+
+pub use display::{AttachedDisplay, DisplayCommand, DisplayCtl, DisplayInfo};
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -243,6 +246,7 @@ impl Transport {
         encoder_kind: &'static str,
         mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
         idr_tx: Option<mpsc::Sender<()>>,
+        displays: Option<DisplayCtl>,
     ) -> Result<(), TransportError> {
         let input_tx = self.input_tx;
         let (video_tx, _video_rx) = tokio::sync::broadcast::channel::<H264Packet>(64);
@@ -261,6 +265,7 @@ impl Transport {
             started: std::time::Instant::now(),
             idr_tx,
             client_shutdown_tx,
+            displays: displays.clone(),
         };
         let app = build_router(state.clone());
         let listener = TcpListener::bind(("0.0.0.0", self.cfg.signaling_port))
@@ -287,6 +292,7 @@ impl Transport {
                 udp_stats,
                 udp_shutdown,
                 udp_stream::UdpLimits::from_env(),
+                displays,
             )
             .await;
         });
@@ -380,6 +386,7 @@ struct AppState {
     started: std::time::Instant,
     idr_tx: Option<mpsc::Sender<()>>,
     client_shutdown_tx: tokio::sync::broadcast::Sender<()>,
+    displays: Option<DisplayCtl>,
 }
 
 fn build_router(state: AppState) -> Router {
@@ -387,6 +394,10 @@ fn build_router(state: AppState) -> Router {
         .route("/stream", get(stream_handler).head(stream_head_handler))
         .route("/input", post(input_post))
         .route("/api/control", post(api_control))
+        .route(
+            "/api/session",
+            post(api_session_open).delete(api_session_close),
+        )
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_check))
         .route("/", get(root_handler))
         .route("/health", get(health_handler))
@@ -480,16 +491,110 @@ async fn auth_check(
 }
 
 async fn api_info(State(state): State<AppState>) -> impl IntoResponse {
+    let mut width = state.display_width;
+    let mut height = state.display_height;
+    let mut encoder = state.encoder_kind.to_string();
+    if let Some(ctl) = &state.displays {
+        if let Some(info) = ctl.lookup(None).await {
+            width = info.width;
+            height = info.height;
+            encoder = info.encoder;
+        }
+    }
     let envelope = serde_json::json!({
-        "display_width": state.display_width,
-        "display_height": state.display_height,
+        "display_width": width,
+        "display_height": height,
         "refresh_hz": state.refresh_hz,
-        "encoder": state.encoder_kind,
+        "encoder": encoder,
         "version": state.version,
         "udp_port": udp_stream::default_udp_port(state.config.signaling_port),
         "transport": ["http-mpegts", "udp-annexb"],
     });
     Json(envelope)
+}
+
+fn query_value<'a>(uri_query: Option<&'a str>, key: &str) -> Option<&'a str> {
+    let prefix = format!("{key}=");
+    uri_query?
+        .split('&')
+        .find_map(|pair| pair.strip_prefix(prefix.as_str()))
+        .filter(|t| !t.is_empty())
+}
+
+async fn api_session_open(
+    State(state): State<AppState>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let Some(ctl) = &state.displays else {
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            Json(
+                serde_json::json!({"ok": false, "error": "per-client displays are not available"}),
+            ),
+        )
+            .into_response();
+    };
+    let name = payload
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("client")
+        .to_string();
+    let key = payload
+        .get("key")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let width = payload
+        .get("width")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(u64::from(state.display_width))
+        .clamp(320, 7680) as u32;
+    let height = payload
+        .get("height")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(u64::from(state.display_height))
+        .clamp(240, 4320) as u32;
+    match ctl.acquire(name, key, width, height).await {
+        Ok(info) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "ok": true,
+                "id": info.id,
+                "name": info.name,
+                "connector": info.connector,
+                "width": info.width,
+                "height": info.height,
+                "encoder": info.encoder,
+                "udp_port": udp_stream::default_udp_port(state.config.signaling_port),
+                "refresh_hz": state.refresh_hz,
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({"ok": false, "error": e})),
+        )
+            .into_response(),
+    }
+}
+
+async fn api_session_close(
+    State(state): State<AppState>,
+    request: axum::extract::Request,
+) -> impl IntoResponse {
+    let Some(ctl) = &state.displays else {
+        return StatusCode::NOT_IMPLEMENTED;
+    };
+    let id = query_value(request.uri().query(), "id")
+        .or_else(|| query_value(request.uri().query(), "session"))
+        .unwrap_or("")
+        .to_string();
+    if id.is_empty() {
+        return StatusCode::BAD_REQUEST;
+    }
+    ctl.release(&id).await;
+    StatusCode::OK
 }
 
 async fn client_config(
@@ -581,7 +686,15 @@ fn inject_ctrl_alt_del(tx: &mpsc::Sender<IncomingInput>) {
     }
 }
 
-fn request_idr(state: &AppState) {
+fn request_idr(state: &AppState, session: Option<&str>) {
+    if let Some(ctl) = &state.displays {
+        let ctl = ctl.clone();
+        let id = session.unwrap_or("").to_string();
+        tokio::spawn(async move {
+            ctl.idr(&id).await;
+        });
+        return;
+    }
     if let Some(tx) = &state.idr_tx {
         let _ = tx.try_send(());
     }
@@ -635,7 +748,11 @@ async fn api_control(
             (StatusCode::OK, Json(serde_json::json!({"ok": true})))
         }
         Some("idr") | Some("keyframe") => {
-            request_idr(&state);
+            let session = payload
+                .get("session")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            request_idr(&state, session.as_deref());
             info!("host control: IDR requested");
             (StatusCode::OK, Json(serde_json::json!({"ok": true})))
         }
@@ -655,6 +772,41 @@ async fn api_control(
                 .and_then(|v| v.as_u64())
                 .unwrap_or(60)
                 .clamp(30, 240) as u32;
+            info!("host control: requested resolution change to {width}x{height}@{fps}Hz");
+            if let Some(ctl) = &state.displays {
+                let mut session = payload
+                    .get("session")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if session.is_empty() {
+                    session = ctl
+                        .lookup(None)
+                        .await
+                        .map(|info| info.id)
+                        .unwrap_or_default();
+                }
+                match ctl.resize(&session, width, height).await {
+                    Ok(info) => {
+                        return (
+                            StatusCode::OK,
+                            Json(serde_json::json!({
+                                "ok": true,
+                                "width": info.width,
+                                "height": info.height,
+                                "connector": info.connector,
+                                "fps": fps,
+                            })),
+                        );
+                    }
+                    Err(e) => {
+                        return (
+                            StatusCode::BAD_GATEWAY,
+                            Json(serde_json::json!({"ok": false, "error": e})),
+                        );
+                    }
+                }
+            }
             let fallback = if state.config.signaling_port == 8790 {
                 "Virtual-ORBISCREEN-2"
             } else {
@@ -664,6 +816,7 @@ async fn api_control(
             info!("host control: requested resolution change on {target_output} to {width}x{height}@{fps}Hz");
             let mode_str = format!("output.{target_output}.mode.{width}x{height}@{fps}");
             let res = tokio::process::Command::new("kscreen-doctor")
+
                 .arg(&mode_str)
                 .status()
                 .await;
@@ -711,11 +864,18 @@ async fn root_handler() -> Html<&'static str> {
 
 async fn input_post(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     match serde_json::from_value::<IncomingInput>(payload) {
         Ok(ev) => {
-            if state.input_tx.try_send(ev).is_err() {
+            if let Some(ctl) = &state.displays {
+                let session = headers
+                    .get("x-orbiscreen-session")
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_string);
+                ctl.input(session, ev).await;
+            } else if state.input_tx.try_send(ev).is_err() {
                 debug!("input queue full; dropping event");
             }
         }
@@ -769,7 +929,9 @@ async fn stream_head_handler() -> impl IntoResponse {
 
 #[derive(serde::Deserialize, Debug, Default)]
 #[allow(dead_code)]
-struct StreamQuery {}
+struct StreamQuery {
+    session: Option<String>,
+}
 
 fn build_video_pipeline() -> Result<
     (
@@ -801,7 +963,7 @@ fn build_video_pipeline() -> Result<
 
 async fn stream_handler(
     State(state): State<AppState>,
-    axum::extract::Query(_query): axum::extract::Query<StreamQuery>,
+    axum::extract::Query(query): axum::extract::Query<StreamQuery>,
 ) -> axum::response::Response {
     use gstreamer::prelude::*;
     use gstreamer_app::{AppSink, AppSinkCallbacks, AppSrc};
@@ -898,11 +1060,26 @@ async fn stream_handler(
     }
     let (pipeline, appsrc, _appsink) = (p, src, sink);
 
+    let session_q = query.session.clone();
+    let attached = if let Some(ctl) = &state.displays {
+        match ctl.attach(session_q.clone()).await {
+            Ok(att) => Some(att),
+            Err(e) => {
+                warn!("stream attach failed: {e}");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        }
+    } else {
+        None
+    };
+    let session_id = attached.as_ref().map(|a| a.info.id.clone());
+
     state.stats.client_started();
-    request_idr(&state);
+    request_idr(&state, session_id.as_deref());
     let appsrc_clone = appsrc.clone();
     let stats = state.stats.clone();
     let idr_tx = state.idr_tx.clone();
+    let displays = state.displays.clone();
 
     struct PipelineGuard(gstreamer::Pipeline);
     impl Drop for PipelineGuard {
@@ -914,12 +1091,25 @@ async fn stream_handler(
 
     let refresh_hz = state.refresh_hz.max(1);
     let nominal_frame_ns = 1_000_000_000u64 / u64::from(refresh_hz);
-    let mut video_rx = state.video_tx.subscribe();
+    let mut video_rx = if let Some(att) = attached {
+        att.video
+    } else {
+        state.video_tx.subscribe()
+    };
     let mut client_shutdown_rx = state.client_shutdown_tx.subscribe();
 
     tokio::spawn(async move {
         let _pipeline_guard = PipelineGuard(pipeline_for_task);
         let _guard = ClientGuard(stats);
+        struct DetachGuard(Option<(DisplayCtl, String)>);
+        impl Drop for DetachGuard {
+            fn drop(&mut self) {
+                if let Some((ctl, id)) = self.0.take() {
+                    tokio::spawn(async move { ctl.detach(&id).await });
+                }
+            }
+        }
+        let _detach = DetachGuard(displays.zip(session_id));
 
         let mut wait_keyframe = true;
         let mut stream_pts_ns: u64 = 0;

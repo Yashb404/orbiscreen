@@ -1,0 +1,663 @@
+// Orbiscreen - client_display.rs (GPL-3.0-or-later)
+// https://github.com/shadow-x78/orbiscreen
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+use orbiscreen_capture::kwin_virtual::{protocol_names_for, KwinVirtualCapture, KwinVirtualSpec};
+use orbiscreen_encode::{EncodeParams, Encoder, EncoderKind};
+use orbiscreen_input::{InputInjector, PointerEvent, VirtualTouchscreenSpec};
+use orbiscreen_transport::{DisplayCommand, DisplayCtl, DisplayInfo, H264Packet, IncomingInput};
+use tokio::sync::{broadcast, mpsc, watch};
+use tracing::{info, warn};
+
+/// After the last viewer detaches, keep the virtual output around long enough
+/// for Firefox to fall back from WebTransport to `/au`.
+const IDLE_AFTER_LAST_VIEWER: Duration = Duration::from_secs(20);
+/// Fresh sessions have to survive Firefox's WebTransport handshake (and the
+/// 4s ready-timeout plus HTTPS `/au` fallback). 750ms was racing that path.
+const WAITING_FOR_FIRST_VIEWER: Duration = Duration::from_secs(30);
+
+#[derive(Clone, Debug)]
+pub struct HubConfig {
+    pub encode_kind: EncoderKind,
+    pub bitrate_kbps: u32,
+    pub refresh_hz: u32,
+}
+
+struct Session {
+    info: DisplayInfo,
+    client_name: String,
+    client_key: Option<String>,
+    video_tx: broadcast::Sender<H264Packet>,
+    idr_tx: mpsc::Sender<()>,
+    input_tx: mpsc::Sender<IncomingInput>,
+    viewers: usize,
+    ever_attached: bool,
+    shutdown: watch::Sender<bool>,
+    capture: Option<Arc<KwinVirtualCapture>>,
+    encoder: Option<Arc<Encoder>>,
+}
+
+pub fn spawn_hub(cfg: HubConfig) -> DisplayCtl {
+    let (tx, rx) = mpsc::channel(64);
+    tokio::spawn(run_hub(cfg, rx));
+    DisplayCtl::new(tx)
+}
+
+async fn run_hub(cfg: HubConfig, mut rx: mpsc::Receiver<DisplayCommand>) {
+    let mut sessions: HashMap<String, Session> = HashMap::new();
+    let mut idle_at: HashMap<String, tokio::time::Instant> = HashMap::new();
+    let mut idle_tick = tokio::time::interval(Duration::from_millis(250));
+    idle_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            cmd = rx.recv() => {
+                let Some(cmd) = cmd else { break };
+                handle_cmd(&cfg, &mut sessions, &mut idle_at, cmd).await;
+            }
+            _ = idle_tick.tick() => {
+                let now = tokio::time::Instant::now();
+                let stale: Vec<String> = idle_at
+                    .iter()
+                    .filter_map(|(id, at)| {
+                        let limit = if sessions.get(id).is_some_and(|s| s.ever_attached) {
+                            IDLE_AFTER_LAST_VIEWER
+                        } else {
+                            WAITING_FOR_FIRST_VIEWER
+                        };
+                        if now.saturating_duration_since(*at) >= limit {
+                            Some(id.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                for id in stale {
+                    idle_at.remove(&id);
+                    if sessions.get(&id).is_some_and(|s| s.viewers == 0) {
+                        close_session(&mut sessions, &id);
+                    }
+                }
+            }
+        }
+    }
+    let ids: Vec<String> = sessions.keys().cloned().collect();
+    for id in ids {
+        close_session(&mut sessions, &id);
+    }
+}
+
+async fn handle_cmd(
+    cfg: &HubConfig,
+    sessions: &mut HashMap<String, Session>,
+    idle_at: &mut HashMap<String, tokio::time::Instant>,
+    cmd: DisplayCommand,
+) {
+    match cmd {
+        DisplayCommand::Acquire {
+            name,
+            key,
+            width,
+            height,
+            reply,
+        } => {
+            let result = open_session(cfg, name, key, width, height).await;
+            if let Ok(session) = result {
+                let info = session.info.clone();
+                idle_at.insert(info.id.clone(), tokio::time::Instant::now());
+                sessions.insert(info.id.clone(), session);
+                let _ = reply.send(Ok(info));
+            } else if let Err(e) = result {
+                let _ = reply.send(Err(e));
+            }
+        }
+        DisplayCommand::Release { id } => {
+            idle_at.remove(&id);
+            close_session(sessions, &id);
+        }
+        DisplayCommand::Attach { id, reply } => {
+            let chosen = resolve_id(sessions, id.as_deref());
+            let Some(sid) = chosen else {
+                let _ = reply.send(Err("no display session".into()));
+                return;
+            };
+            if let Some(session) = sessions.get_mut(&sid) {
+                session.viewers = session.viewers.saturating_add(1);
+                session.ever_attached = true;
+                idle_at.remove(&sid);
+                let attached = orbiscreen_transport::AttachedDisplay {
+                    info: session.info.clone(),
+                    video: session.video_tx.subscribe(),
+                };
+                let _ = reply.send(Ok(attached));
+            }
+        }
+        DisplayCommand::Detach { id } => {
+            if let Some(session) = sessions.get_mut(&id) {
+                session.viewers = session.viewers.saturating_sub(1);
+                if session.viewers == 0 {
+                    idle_at.insert(id, tokio::time::Instant::now());
+                }
+            }
+        }
+        DisplayCommand::Idr { id } => {
+            let chosen = resolve_id(
+                sessions,
+                if id.is_empty() {
+                    None
+                } else {
+                    Some(id.as_str())
+                },
+            );
+            if let Some(sid) = chosen {
+                if let Some(session) = sessions.get(&sid) {
+                    let _ = session.idr_tx.try_send(());
+                }
+            }
+        }
+        DisplayCommand::Resize {
+            id,
+            width,
+            height,
+            reply,
+        } => {
+            let Some(old) = sessions.remove(&id) else {
+                let _ = reply.send(Err("unknown session".into()));
+                return;
+            };
+            let name = old.client_name.clone();
+            let key = old.client_key.clone();
+            close_session_inner(old);
+            match open_session(cfg, name, key, width, height).await {
+                Ok(mut session) => {
+                    session.info.id = id.clone();
+                    let info = session.info.clone();
+                    sessions.insert(id, session);
+                    let _ = reply.send(Ok(info));
+                }
+                Err(e) => {
+                    let _ = reply.send(Err(e));
+                }
+            }
+        }
+        DisplayCommand::Lookup { id, reply } => {
+            let chosen = resolve_id(sessions, id.as_deref());
+            let info = chosen.and_then(|sid| sessions.get(&sid).map(|s| s.info.clone()));
+            let _ = reply.send(info);
+        }
+        DisplayCommand::Input { id, event } => {
+            let chosen = resolve_id(sessions, id.as_deref());
+            if let Some(sid) = chosen {
+                if let Some(session) = sessions.get(&sid) {
+                    let _ = session.input_tx.try_send(event);
+                }
+            } else {
+                warn!(
+                    session = ?id,
+                    open = sessions.len(),
+                    "dropping input; no matching display session"
+                );
+            }
+        }
+    }
+}
+
+fn resolve_id(sessions: &HashMap<String, Session>, id: Option<&str>) -> Option<String> {
+    resolve_session_id(sessions.keys().map(String::as_str), id)
+}
+
+fn resolve_session_id<'a>(
+    keys: impl IntoIterator<Item = &'a str>,
+    id: Option<&str>,
+) -> Option<String> {
+    let keys: Vec<&str> = keys.into_iter().collect();
+    if let Some(id) = id.filter(|s| !s.is_empty()) {
+        return keys.contains(&id).then(|| id.to_string());
+    }
+    if keys.len() == 1 {
+        return Some(keys[0].to_string());
+    }
+    None
+}
+
+fn next_id() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(1);
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{n:x}")
+}
+
+fn encoder_label(kind: EncoderKind) -> &'static str {
+    match kind {
+        EncoderKind::Auto => "auto",
+        EncoderKind::Vaapi => "vaapi",
+        EncoderKind::Nvenc => "nvenc",
+        EncoderKind::X264 => "x264",
+    }
+}
+
+async fn open_session(
+    cfg: &HubConfig,
+    name: String,
+    key: Option<String>,
+    width: u32,
+    height: u32,
+) -> Result<Session, String> {
+    let width = width.clamp(320, 7680);
+    let height = height.clamp(240, 4320);
+    let (description, names) = protocol_names_for(&name, key.as_deref());
+    let spec = KwinVirtualSpec {
+        width,
+        height,
+        names,
+        description,
+    };
+    let capture = tokio::task::spawn_blocking(move || KwinVirtualCapture::open(spec))
+        .await
+        .map_err(|e| format!("kwin open task: {e}"))?
+        .map_err(|e| e.to_string())?;
+    let capture = Arc::new(capture);
+    let connector = capture.connector_name().to_string();
+    let (actual_w, actual_h) = capture.dimensions();
+    info!(connector = %connector, width = actual_w, height = actual_h, "client virtual output created");
+
+    {
+        let name = connector.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            let enable_spec = format!("output.{name}.enable");
+            let scale_spec = format!("output.{name}.scale.1");
+            let next_x = orbiscreen_capture::kwin_virtual::next_available_output_x(&name);
+            let pos_spec = format!("output.{name}.position.{next_x},0");
+            for _ in 0..5 {
+                let status = tokio::process::Command::new("kscreen-doctor")
+                    .arg(&enable_spec)
+                    .arg(&scale_spec)
+                    .arg(&pos_spec)
+                    .status()
+                    .await;
+                if let Ok(s) = status {
+                    if s.success() {
+                        info!("Enabled and scaled KWin output {name} at position {next_x},0");
+                        break;
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            }
+        });
+    }
+
+    let mut encoder = Encoder::new(EncodeParams {
+        kind: cfg.encode_kind,
+        bitrate_kbps: cfg.bitrate_kbps,
+        width: actual_w,
+        height: actual_h,
+        framerate: cfg.refresh_hz,
+    })
+    .map_err(|e| e.to_string())?;
+    let encoder_name = encoder_label(encoder.kind());
+    let mut encoded_rx = encoder
+        .subscribe()
+        .ok_or_else(|| "encoder returned no rx".to_string())?;
+    let encoder = Arc::new(encoder);
+    let (idr_tx, mut idr_rx) = mpsc::channel::<()>(8);
+    let encoder_for_idr = Arc::clone(&encoder);
+    tokio::spawn(async move {
+        while idr_rx.recv().await.is_some() {
+            encoder_for_idr.request_keyframe();
+        }
+    });
+
+    let (video_tx, _) = broadcast::channel::<H264Packet>(64);
+    let video_out = video_tx.clone();
+    tokio::spawn(async move {
+        let mut ts_base: Option<u64> = None;
+        while let Some(chunk) = encoded_rx.recv().await {
+            let base = *ts_base.get_or_insert(chunk.pts_ns);
+            let pkt = H264Packet {
+                bytes: chunk.bytes,
+                is_keyframe: chunk.is_keyframe,
+                pts_ns: chunk.pts_ns.saturating_sub(base),
+            };
+            let _ = video_out.send(pkt);
+        }
+    });
+
+    let (input_tx, input_rx) = mpsc::channel::<IncomingInput>(1024);
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    spawn_capture_pump(
+        Arc::clone(&capture),
+        Arc::clone(&encoder),
+        cfg.refresh_hz,
+        shutdown_rx,
+    );
+    spawn_input_pump(
+        input_rx,
+        actual_w,
+        actual_h,
+        connector.clone(),
+        name.clone(),
+        key.clone(),
+    );
+
+    let id = next_id();
+    Ok(Session {
+        info: DisplayInfo {
+            id,
+            name: name.clone(),
+            connector,
+            width: actual_w,
+            height: actual_h,
+            encoder: encoder_name.to_string(),
+        },
+        client_name: name,
+        client_key: key,
+        video_tx,
+        idr_tx,
+        input_tx,
+        viewers: 0,
+        ever_attached: false,
+        shutdown: shutdown_tx,
+        capture: Some(capture),
+        encoder: Some(encoder),
+    })
+}
+
+fn spawn_capture_pump(
+    capture: Arc<KwinVirtualCapture>,
+    encoder: Arc<Encoder>,
+    refresh_hz: u32,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    tokio::spawn(async move {
+        let frame_dur = Encoder::frame_duration_ns(refresh_hz);
+        const KEEPALIVE: Duration = Duration::from_millis(100);
+        let started = std::time::Instant::now();
+        let mut last_pts_ns: u64 = frame_dur;
+        let mut keepalive_frame: Option<(u32, u32, Vec<u8>)> = None;
+        loop {
+            if *shutdown.borrow() {
+                break;
+            }
+            let outcome = tokio::select! {
+                _ = shutdown.changed() => break,
+                result = tokio::time::timeout(KEEPALIVE, capture.next_frame()) => result,
+            };
+            match outcome {
+                Ok(Ok(frame)) => {
+                    keepalive_frame = Some((frame.width, frame.height, frame.data.to_vec()));
+                    let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+                    last_pts_ns = now_ns.max(last_pts_ns.saturating_add(frame_dur));
+                    if let Err(e) =
+                        encoder.push_frame_owned(frame.data, frame.width, frame.height, last_pts_ns)
+                    {
+                        match e {
+                            orbiscreen_encode::EncodeError::Flushing
+                            | orbiscreen_encode::EncodeError::Eos => break,
+                            _ => warn!("frame push rejected: {e}"),
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    warn!("client display capture ended: {e}");
+                    break;
+                }
+                Err(_elapsed) => {
+                    let Some((width, height, data)) = &keepalive_frame else {
+                        continue;
+                    };
+                    let now_ns = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+                    last_pts_ns = now_ns.max(last_pts_ns.saturating_add(frame_dur));
+                    if let Err(
+                        orbiscreen_encode::EncodeError::Flushing
+                        | orbiscreen_encode::EncodeError::Eos,
+                    ) = encoder.push_frame(data, *width, *height, last_pts_ns)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+}
+
+fn spawn_input_pump(
+    mut input_rx: mpsc::Receiver<IncomingInput>,
+    width: u32,
+    height: u32,
+    connector: String,
+    client_name: String,
+    client_key: Option<String>,
+) {
+    tokio::spawn(async move {
+        let label = client_key
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(client_name.as_str());
+        let prefix = format!(
+            "OrbiScreen-{}",
+            orbiscreen_capture::kwin_virtual::sanitize_client_name(label)
+        );
+        let spec = VirtualTouchscreenSpec {
+            width,
+            height,
+            output_name: Some(connector.clone()),
+            device_label: Some(prefix.clone()),
+        };
+        let mut injector = match InputInjector::open_async(spec).await {
+            Ok(inj) => {
+                info!(connector = %connector, "input injector open for client display");
+                bind_inputs(&connector, &prefix).await;
+                Some(inj)
+            }
+            Err(e) => {
+                warn!("input injector unavailable for {connector}: {e}");
+                None
+            }
+        };
+        while let Some(event) = input_rx.recv().await {
+            let Some(inj) = injector.as_mut() else {
+                continue;
+            };
+            match event {
+                IncomingInput::Pointer(p) => {
+                    let _ = inj.inject_pointer(p).await;
+                }
+                IncomingInput::Key(k) => {
+                    let _ = inj.inject_key(k).await;
+                }
+                IncomingInput::Stylus(s) => {
+                    let _ = inj.inject_stylus(s).await;
+                }
+                IncomingInput::Touch(t) => {
+                    let _ = inj.inject_touch(t).await;
+                }
+                IncomingInput::RawPointer { x, y } => {
+                    let _ = inj.inject_pointer(PointerEvent::Move { x, y }).await;
+                }
+                IncomingInput::Resize { width, height } => {
+                    inj.resize(width, height);
+                }
+            }
+        }
+    });
+}
+
+fn close_session(sessions: &mut HashMap<String, Session>, id: &str) {
+    if let Some(session) = sessions.remove(id) {
+        close_session_inner(session);
+    }
+}
+
+fn close_session_inner(mut session: Session) {
+    let _ = session.shutdown.send(true);
+    if let Some(encoder) = session.encoder.take() {
+        encoder.stop();
+    }
+    if let Some(capture) = session.capture.take() {
+        info!(
+            connector = %session.info.connector,
+            "closed client virtual output"
+        );
+        drop(capture);
+    }
+}
+
+/// Parse child `eventN` nodes from KWin's InputDevice introspect XML.
+/// libinput assigns uinput devices well past event63 (often event256+).
+pub(crate) fn event_paths_from_introspect(xml: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut rest = xml;
+    while let Some(idx) = rest.find(r#"name="event"#) {
+        let start = idx + r#"name=""#.len();
+        let after = &rest[start..];
+        let Some(end) = after.find('"') else {
+            break;
+        };
+        let name = &after[..end];
+        if name.starts_with("event") && name[5..].bytes().all(|b| b.is_ascii_digit()) {
+            paths.push(format!("/org/kde/KWin/InputDevice/{name}"));
+        }
+        rest = &after[end..];
+    }
+    paths
+}
+
+pub(crate) async fn list_kwin_input_device_paths(conn: &zbus::Connection) -> Vec<String> {
+    if let Ok(proxy) = zbus::Proxy::new(
+        conn,
+        "org.kde.KWin",
+        "/org/kde/KWin/InputDevice",
+        "org.freedesktop.DBus.Introspectable",
+    )
+    .await
+    {
+        if let Ok(xml) = proxy.call::<_, _, String>("Introspect", &()).await {
+            let paths = event_paths_from_introspect(&xml);
+            if !paths.is_empty() {
+                return paths;
+            }
+        }
+    }
+    (0..=512)
+        .map(|idx| format!("/org/kde/KWin/InputDevice/event{idx}"))
+        .collect()
+}
+
+async fn bind_inputs(target_output: &str, device_prefix: &str) {
+    let mut last_bound = 0;
+    let mut last_resolved = target_output.to_string();
+    for delay_ms in [250, 500, 1000, 2000] {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        let Some(resolved) =
+            orbiscreen_capture::kwin_virtual::preferred_tablet_output(Some(target_output))
+        else {
+            continue;
+        };
+        last_resolved = resolved.clone();
+        if let Ok(conn) = zbus::Connection::session().await {
+            last_bound =
+                bind_named_kwin_devices(&conn, &resolved, |name| name.starts_with(device_prefix))
+                    .await;
+            if last_bound >= 3 {
+                return;
+            }
+        }
+    }
+    if last_bound < 3 {
+        warn!(
+            bound = last_bound,
+            prefix = device_prefix,
+            output = %last_resolved,
+            "KWin input bind found fewer than 3 OrbiScreen devices"
+        );
+    }
+}
+
+pub(crate) async fn bind_named_kwin_devices<F>(
+    conn: &zbus::Connection,
+    resolved: &str,
+    mut name_matches: F,
+) -> usize
+where
+    F: FnMut(&str) -> bool,
+{
+    let uuid = orbiscreen_capture::kwin_virtual::output_uuid(resolved);
+    let mut bound = 0;
+    for path in list_kwin_input_device_paths(conn).await {
+        let Ok(proxy) = zbus::Proxy::new(
+            conn,
+            "org.kde.KWin",
+            path.as_str(),
+            "org.kde.KWin.InputDevice",
+        )
+        .await
+        else {
+            continue;
+        };
+        let Ok(name) = proxy.get_property::<String>("name").await else {
+            continue;
+        };
+        if !name_matches(&name) {
+            continue;
+        }
+        if let Err(e) = proxy.set_property::<&str>("outputName", resolved).await {
+            warn!("could not set outputName={resolved} on {path} ({name}): {e}");
+            continue;
+        }
+        if let Some(uuid) = uuid.as_deref() {
+            let _ = proxy.set_property::<&str>("outputUuid", uuid).await;
+        }
+        let _ = proxy.set_property::<bool>("mapToWorkspace", false).await;
+        info!("bound KWin input device {path} ({name}) to output {resolved}");
+        bound += 1;
+    }
+    bound
+}
+
+#[cfg(test)]
+mod tests {
+    use super::event_paths_from_introspect;
+
+    #[test]
+    fn resolve_id_does_not_steal_the_only_session_when_id_is_unknown() {
+        use super::resolve_session_id;
+        let one = ["web"];
+        assert_eq!(resolve_session_id(one, None).as_deref(), Some("web"));
+        assert_eq!(resolve_session_id(one, Some("")).as_deref(), Some("web"));
+        assert_eq!(resolve_session_id(one, Some("web")).as_deref(), Some("web"));
+        assert_eq!(resolve_session_id(one, Some("stale")), None);
+        let two = ["web", "android"];
+        assert_eq!(resolve_session_id(two, None), None);
+        assert_eq!(
+            resolve_session_id(two, Some("android")).as_deref(),
+            Some("android")
+        );
+    }
+
+    #[test]
+    fn introspect_xml_includes_high_event_nodes() {
+        let xml = r#"<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+  <interface name="org.freedesktop.DBus.Introspectable"/>
+  <node name="event0"/>
+  <node name="event31"/>
+  <node name="event256"/>
+  <node name="event260"/>
+  <node name="not-an-event"/>
+</node>"#;
+        let paths = event_paths_from_introspect(xml);
+        assert_eq!(
+            paths,
+            vec![
+                "/org/kde/KWin/InputDevice/event0",
+                "/org/kde/KWin/InputDevice/event31",
+                "/org/kde/KWin/InputDevice/event256",
+                "/org/kde/KWin/InputDevice/event260",
+            ]
+        );
+    }
+}

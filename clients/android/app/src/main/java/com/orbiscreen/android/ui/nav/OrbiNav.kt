@@ -48,7 +48,9 @@ object Routes {
 @Composable
 fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788) {
     val nav = rememberNavController()
-    val appContext = LocalContext.current.applicationContext
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val activity = context as? android.app.Activity
     val start = if (!startHost.isNullOrBlank()) {
         Routes.stream(startHost, startPort)
     } else {
@@ -56,6 +58,17 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
     }
 
     var lastAutoConnectedPort by remember { mutableStateOf<Int?>(null) }
+
+    // STREAM may be the start destination; a bare popBackStack() then does nothing.
+    val leaveStream: () -> Unit = {
+        activity?.intent?.removeExtra("host")
+        if (!nav.popBackStack(Routes.DISCOVERY, inclusive = false)) {
+            nav.navigate(Routes.DISCOVERY) {
+                popUpTo(nav.graph.startDestinationId) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         UsbAccessoryManager.autoConnectEvent.collect { port ->
@@ -78,7 +91,7 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
             if (cur == Routes.STREAM) {
                 val host = nav.currentBackStackEntry?.arguments?.getString("host")
                 if (host == "127.0.0.1") {
-                    nav.popBackStack(Routes.DISCOVERY, inclusive = false)
+                    leaveStream()
                     Toast.makeText(
                         appContext,
                         appContext.getString(R.string.usb_disconnected_toast),
@@ -88,6 +101,7 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
             }
         }
     }
+
 
     NavHost(
         navController = nav,
@@ -133,9 +147,10 @@ fun OrbiNav(prefs: PrefsStore, startHost: String? = null, startPort: Int = 8788)
                     }
                 },
             )
+
             StreamScreen(
                 viewModel = vm,
-                onBack = { nav.popBackStack() },
+                onBack = leaveStream,
             )
         }
         composable(Routes.SETTINGS) {

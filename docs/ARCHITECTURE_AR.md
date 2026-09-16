@@ -50,7 +50,7 @@ graph TD
         K -->|"بث MPEG-TS مع توكن المصادقة"| L["المشغل وفك الترميز (ExoPlayer + MediaCodec)"]
         L -->|"أحداث اللمس والقلم"| N["معالج الإدخال (InputDispatcher)"]
         N -->|"إرسال الإدخال POST /input مع التوكن"| F
-        J -->|"أوامر التحكم POST /api/control"| F
+        J -->|"POST /api/session وأوامر التحكم POST /api/control"| F
     end
 ```
 

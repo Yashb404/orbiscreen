@@ -13,7 +13,7 @@ use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Anchor;
 use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
-const OUTPUT_HINT: &str = "ORBISCREEN";
+const DEFAULT_OUTPUT_HINT: &str = "ORBISCREEN";
 
 pub(crate) struct DamagePumpHandle {
     stop: Arc<AtomicBool>,
@@ -29,13 +29,31 @@ impl Drop for DamagePumpHandle {
     }
 }
 
-pub(crate) fn spawn(target_output: Option<String>, period: Duration) -> DamagePumpHandle {
+pub(crate) fn spawn(period: Duration, hint: &str) -> DamagePumpHandle {
     let stop = Arc::new(AtomicBool::new(false));
     let pump_stop = Arc::clone(&stop);
+    let hint = if hint.is_empty() {
+        DEFAULT_OUTPUT_HINT.to_string()
+    } else {
+        hint.to_string()
+    };
     let thread = std::thread::Builder::new()
         .name("orbiscreen-damage".into())
         .spawn(move || {
-            if let Err(e) = run(target_output, period, pump_stop) {
+            let mut last = None;
+            for _ in 0..30 {
+                if pump_stop.load(Ordering::Relaxed) {
+                    return;
+                }
+                match run(Some(hint.clone()), period, Arc::clone(&pump_stop)) {
+                    Ok(()) => return,
+                    Err(e) => {
+                        last = Some(e);
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            }
+            if let Some(e) = last {
                 tracing::warn!("damage pump disabled: {e}");
             }
         })
@@ -118,7 +136,7 @@ fn run(
                 if upper_has_2 != is_sec {
                     return false;
                 }
-                upper.contains(OUTPUT_HINT) || upper.starts_with("VIRTUAL")
+                upper.contains(DEFAULT_OUTPUT_HINT) || upper.starts_with("VIRTUAL")
             })
             .map(|(proxy, _)| proxy.clone())
             .or_else(|| {
@@ -157,7 +175,7 @@ fn run(
         std::thread::sleep(Duration::from_millis(50));
     }
     let Some(output) = target else {
-        let hint = target_output.as_deref().unwrap_or(OUTPUT_HINT);
+        let hint = target_output.as_deref().unwrap_or(DEFAULT_OUTPUT_HINT);
         return Err(format!("no virtual output matching '{hint}' found"));
     };
     if let Some((_, name)) = state.output_names.iter().find(|(p, _)| p == &output) {

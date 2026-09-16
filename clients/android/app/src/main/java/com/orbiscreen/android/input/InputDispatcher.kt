@@ -46,6 +46,9 @@ class InputDispatcher(
     private var token: String = token
 
     @Volatile
+    var sessionId: String? = null
+
+    @Volatile
     private var streamWidth: Int = displayWidth
 
     @Volatile
@@ -328,6 +331,7 @@ class InputDispatcher(
                 if (t.isNotBlank()) {
                     builder.header("Authorization", "Bearer $t")
                 }
+                sessionId?.takeIf { it.isNotBlank() }?.let { builder.header("X-Orbiscreen-Session", it) }
                 http.newCall(builder.build()).execute().use { resp ->
                     ok = resp.isSuccessful
                     if (!ok) {
@@ -364,6 +368,7 @@ class InputDispatcher(
             if (t.isNotBlank()) {
                 builder.header("Authorization", "Bearer $t")
             }
+            sessionId?.takeIf { it.isNotBlank() }?.let { builder.header("X-Orbiscreen-Session", it) }
             http.newCall(builder.build()).enqueue(object : okhttp3.Callback {
                 override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
                     Log.v(TAG, "send failed: ${e.message}")

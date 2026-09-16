@@ -237,12 +237,12 @@ Error: evdi kernel module is not installed
 
 **Symptom:** `orbiscreen start` logs `EVDI kernel module not active` and you do not want to build a kernel module.
 
-**Fix:** on KDE Plasma Wayland nothing else is needed. With the default `[capture] preferred = "auto"`, the daemon asks KWin to create a virtual monitor (`Virtual-ORBISCREEN`, visible in System Settings → Display Configuration) through the `zkde_screencast_unstable_v1` Wayland protocol and streams it over PipeWire, no root, no share dialog. KWin only exposes that protocol to allow-listed executables, so the daemon maintains `~/.local/share/applications/orbiscreen.kwin.desktop` (user-writable) and refreshes the KService cache automatically; the first run may take a few extra seconds while the grant becomes visible.
+**Fix:** on KDE Plasma Wayland nothing else is needed. With the default `[capture] preferred = "auto"`, a connecting client asks the daemon to create a KWin virtual monitor through the `zkde_screencast_unstable_v1` Wayland protocol (description is the device name, connector `Virtual-Orbi-<key>`) and streams it over PipeWire, no root, no share dialog. KWin only exposes that protocol to allow-listed executables, so the daemon maintains `~/.local/share/applications/orbiscreen.kwin.desktop` (user-writable) and refreshes the KService cache automatically; the first run may take a few extra seconds while the grant becomes visible.
 
 Notes:
 - Force the path with `[capture] preferred = "kwin-virtual"` (fail loudly if unavailable) or `"portal"` (always show the share dialog).
-- The virtual output disappears when the daemon stops; that is expected.
-- **You see only the desktop wallpaper in the stream?** That is correct: the virtual monitor is a *second, empty* screen. Drag windows onto `Virtual-ORBISCREEN`, or set `[capture] preferred = "mirror"` to stream your real screen instead.
+- The output for a client disappears when that client disconnects; all of them disappear when the daemon stops.
+- **You see only the desktop wallpaper in the stream?** That is correct: the virtual monitor is a *second, empty* screen. Drag windows onto that client's output (`Virtual-Orbi-<device>`), or set `[capture] preferred = "mirror"` to stream your real screen instead.
 - On GNOME / wlroots compositors the protocol does not exist and `auto` falls back to the portal share dialog.
 - EVDI is now opt-in (`preferred = "evdi"`); `auto` on Wayland never touches it, so the old `EVDI kernel module not active` line no longer appears on KDE.
 

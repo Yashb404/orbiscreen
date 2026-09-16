@@ -467,6 +467,7 @@ fun StreamScreen(
                             Button(
                                 onClick = {
                                     showExitConfirmDialog = false
+                                    viewModel.disconnect()
                                     onBack()
                                 },
                                 colors = ButtonDefaults.buttonColors(

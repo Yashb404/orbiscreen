@@ -63,6 +63,7 @@ private data class StreamTarget(
     val host: String,
     val port: Int,
     val tokenProvider: suspend () -> String,
+    val session: com.orbiscreen.android.net.HostApi.SessionInfo? = null,
 )
 
 @OptIn(UnstableApi::class)
@@ -85,6 +86,7 @@ class PlayerHolder(
     private var retryCount = 0
     private val maxRetries = 3
     private var lastTarget: StreamTarget? = null
+    var refreshSession: (suspend () -> com.orbiscreen.android.net.HostApi.SessionInfo?)? = null
 
     private val lastIdrAtMs = java.util.concurrent.atomic.AtomicLong(0L)
 
@@ -118,14 +120,22 @@ class PlayerHolder(
     suspend fun build(
         host: String,
         port: Int,
+        session: com.orbiscreen.android.net.HostApi.SessionInfo? = null,
         tokenProvider: suspend () -> String = { "" },
-    ): ExoPlayer? = buildInternal(host, port, tokenProvider, fromReconnect = false)
+    ): ExoPlayer? = buildInternal(
+        host,
+        port,
+        tokenProvider,
+        fromReconnect = false,
+        session = session,
+    )
 
     private suspend fun buildInternal(
         host: String,
         port: Int,
         tokenProvider: suspend () -> String,
         fromReconnect: Boolean,
+        session: com.orbiscreen.android.net.HostApi.SessionInfo? = null,
     ): ExoPlayer? {
         releaseInternal()
         if (!fromReconnect) {
@@ -134,7 +144,7 @@ class PlayerHolder(
             reconnectDelayMs = 1_000L
             retryCount = 0
         }
-        lastTarget = StreamTarget(host, port, tokenProvider)
+        lastTarget = StreamTarget(host, port, tokenProvider, session)
 
         val token = try {
             tokenProvider()
@@ -143,7 +153,12 @@ class PlayerHolder(
         } catch (_: Exception) {
             ""
         }
-        val uri = StreamUrl.build(host, port, token)
+        val uri = StreamUrl.build(
+            host,
+            port,
+            token,
+            session = session?.id,
+        )
         android.util.Log.i("OrbiPlayer", "connecting to stream: $uri")
         _event.value = StreamEvent.Connecting(uri)
 
@@ -152,10 +167,13 @@ class PlayerHolder(
         } catch (_: Exception) {
             null
         }
-        if (info != null && info.udpPort in 1..65535 && host != "127.0.0.1" && host != "localhost") {
+        val udpPort = session?.udpPort ?: info?.udpPort ?: 0
+        val streamW = session?.width ?: info?.width ?: 1920
+        val streamH = session?.height ?: info?.height ?: 1080
+        if (udpPort in 1..65535 && host != "127.0.0.1" && host != "localhost") {
             val udp = UdpPlayer()
             val started = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                udp.start(host, info.udpPort, token, info.width, info.height)
+                udp.start(host, udpPort, token, streamW, streamH, session?.id)
             }
             if (started) {
                 _udp.value = udp
@@ -362,7 +380,14 @@ class PlayerHolder(
         reconnectJob = scope.launch {
             delay(reconnectDelayMs)
             reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(10_000L)
-            buildInternal(target.host, target.port, target.tokenProvider, fromReconnect = true)
+            val session = refreshedSession() ?: target.session
+            buildInternal(
+                target.host,
+                target.port,
+                target.tokenProvider,
+                fromReconnect = true,
+                session = session,
+            )
         }
     }
 
@@ -408,7 +433,20 @@ class PlayerHolder(
     }
 
     fun retry(host: String, port: Int, tokenProvider: suspend () -> String = { "" }) {
-        scope.launch { build(host, port, tokenProvider) }
+        scope.launch {
+            val session = refreshedSession() ?: lastTarget?.session
+            build(host, port, session, tokenProvider)
+        }
+    }
+
+    private suspend fun refreshedSession(): com.orbiscreen.android.net.HostApi.SessionInfo? {
+        return try {
+            refreshSession?.invoke()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 }
 

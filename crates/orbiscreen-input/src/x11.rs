@@ -47,15 +47,26 @@ impl UinputInjector {
         let height_axis = AbsInfo::new(0, spec.height.saturating_sub(1) as i32);
 
         let is_secondary = spec.output_name.as_deref().is_some_and(|s| s.contains('2'));
-        let prefix = if is_secondary {
-            "Orbiscreen 2"
-        } else {
-            "Orbiscreen"
-        };
         let prod_offset = if is_secondary { 0x0010 } else { 0x0000 };
-        let mk_name = format!("{prefix} Virtual Mouse and Keyboard");
-        let ts_name = format!("{prefix} Virtual Touchscreen");
-        let tab_name = format!("{prefix} Virtual Tablet");
+        let (mk_name, ts_name, tab_name) =
+            if let Some(label) = spec.device_label.as_deref().filter(|s| !s.is_empty()) {
+                (
+                    format!("{label} Mouse"),
+                    format!("{label} Touch"),
+                    format!("{label} Pen"),
+                )
+            } else {
+                let prefix = if is_secondary {
+                    "Orbiscreen 2"
+                } else {
+                    "Orbiscreen"
+                };
+                (
+                    format!("{prefix} Virtual Mouse and Keyboard"),
+                    format!("{prefix} Virtual Touchscreen"),
+                    format!("{prefix} Virtual Tablet"),
+                )
+            };
 
         let mouse_keyboard = UinputDevice::builder()?
             .with_input_id(InputId::new(

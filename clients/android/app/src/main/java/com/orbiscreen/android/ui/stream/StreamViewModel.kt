@@ -46,6 +46,7 @@ class StreamViewModel(
     private val playerHolder = PlayerHolder(context, prefs)
     private var inputDispatcher: InputDispatcher? = null
     private var sessionToken: String? = null
+    private var displaySessionId: String? = null
     private var lastIdrAtMs = 0L
 
     private fun scaleModeFromPref(pref: String): Int = when (pref) {
@@ -130,18 +131,47 @@ class StreamViewModel(
             }
             sessionToken = info.first
             info.first?.let { inputDispatcher?.updateToken(it) }
+            val token = info.first.orEmpty()
+            val identity = com.orbiscreen.android.net.ClientIdentity.from(context)
+            val session = if (token.isNotBlank()) {
+                hostApi.openSession(host, port, token, identity)
+            } else {
+                null
+            }
+            displaySessionId = session?.id
+            inputDispatcher?.sessionId = session?.id
             val hostInfo = info.second
-            val streamW = hostInfo?.width ?: 1920
-            val streamH = hostInfo?.height ?: 1080
+            val (nativeW, nativeH, _) = detectNativeDisplay()
+            val isPortrait = context.resources.configuration.orientation ==
+                android.content.res.Configuration.ORIENTATION_PORTRAIT
+            val targetW = if (isPortrait) nativeH else nativeW
+            val targetH = if (isPortrait) nativeW else nativeH
+            val w = session?.width
+                ?: targetW.takeIf { it > 0 }
+                ?: hostInfo?.width
+                ?: identity.width
+            val h = session?.height
+                ?: targetH.takeIf { it > 0 }
+                ?: hostInfo?.height
+                ?: identity.height
             _state.value = _state.value.copy(
-                displayWidth = streamW,
-                displayHeight = streamH,
-                resolutionLabel = "${streamW}x${streamH}",
-                encoder = hostInfo?.encoder.orEmpty(),
+                displayWidth = w,
+                displayHeight = h,
+                resolutionLabel = "${w}x${h}",
+                encoder = session?.encoder ?: hostInfo?.encoder.orEmpty(),
                 version = hostInfo?.version.orEmpty(),
             )
-            inputDispatcher?.resize(streamW, streamH)
-            playerHolder.build(host, port, tokenProvider = { freshToken() })
+            inputDispatcher?.resize(
+                _state.value.displayWidth,
+                _state.value.displayHeight,
+            )
+            playerHolder.refreshSession = { reopenDisplaySession() }
+            playerHolder.build(
+                host,
+                port,
+                session,
+                tokenProvider = { freshToken() },
+            )
         }
         viewModelScope.launch {
             _state.collect { s ->
@@ -175,7 +205,7 @@ class StreamViewModel(
     }
 
     fun ensureInput(): InputDispatcher {
-        return inputDispatcher ?: InputDispatcher(
+        val dispatcher = inputDispatcher ?: InputDispatcher(
             host = state.value.host,
             port = state.value.port,
             displayWidth = state.value.displayWidth,
@@ -189,6 +219,10 @@ class StreamViewModel(
             }
             inputDispatcher = it
         }
+        dispatcher.sessionId = displaySessionId
+        sessionToken?.let { dispatcher.updateToken(it) }
+        dispatcher.resize(state.value.displayWidth, state.value.displayHeight)
+        return dispatcher
     }
 
     val pointerSpeed: Float
@@ -197,6 +231,40 @@ class StreamViewModel(
     fun setPointerSpeed(speed: Float) {
         prefs.pointerSpeed = speed
         inputDispatcher?.pointerSpeed = speed
+    }
+
+    fun disconnect() {
+        val id = displaySessionId
+        val token = sessionToken
+        displaySessionId = null
+        viewModelScope.launch(Dispatchers.IO) {
+            if (!id.isNullOrBlank() && !token.isNullOrBlank()) {
+                hostApi.closeSession(host, port, token, id)
+            }
+        }
+        playerHolder.release()
+    }
+
+    private suspend fun reopenDisplaySession(): com.orbiscreen.android.net.HostApi.SessionInfo? {
+        val token = freshToken(forceRefresh = true)
+        val identity = com.orbiscreen.android.net.ClientIdentity.from(context)
+        val session = if (token.isNotBlank()) {
+            hostApi.openSession(host, port, token, identity)
+        } else {
+            null
+        }
+        displaySessionId = session?.id
+        inputDispatcher?.sessionId = session?.id
+        if (session != null) {
+            _state.value = _state.value.copy(
+                displayWidth = session.width,
+                displayHeight = session.height,
+                resolutionLabel = "${session.width}x${session.height}",
+                encoder = session.encoder,
+            )
+            inputDispatcher?.resize(session.width, session.height)
+        }
+        return session
     }
 
     fun retry() = playerHolder.retry(state.value.host, state.value.port) { freshToken(forceRefresh = true) }
@@ -230,6 +298,7 @@ class StreamViewModel(
                 put("width", w)
                 put("height", h)
                 put("fps", fps)
+                displaySessionId?.let { put("session", it) }
             })
         }
     }
@@ -247,8 +316,8 @@ class StreamViewModel(
     }
 
     override fun onCleared() {
+        disconnect()
         inputDispatcher?.release()
-        playerHolder.release()
         super.onCleared()
     }
 }

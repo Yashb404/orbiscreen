@@ -7,12 +7,15 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "Orbi.Api"
+private val JSON = "application/json".toMediaType()
 
 class HostApi {
 
@@ -35,6 +38,15 @@ class HostApi {
         val encoder: String = "unknown",
         val version: String = "?",
         val udpPort: Int = 0,
+    )
+
+    data class SessionInfo(
+        val id: String,
+        val width: Int,
+        val height: Int,
+        val encoder: String,
+        val udpPort: Int,
+        val connector: String,
     )
 
     suspend fun token(host: String, port: Int): String? = withContext(Dispatchers.IO) {
@@ -78,6 +90,63 @@ class HostApi {
             } catch (e: Exception) {
                 Log.v(TAG, "info failed: ${e.message}")
                 null
+            }
+        }
+    }
+
+    suspend fun openSession(
+        host: String,
+        port: Int,
+        token: String,
+        identity: ClientIdentity,
+    ): SessionInfo? = withContext(Dispatchers.IO) {
+        withTimeoutOrNull(12_000) {
+            try {
+                val body = JSONObject()
+                    .put("name", identity.name)
+                    .put("key", identity.key)
+                    .put("width", identity.width)
+                    .put("height", identity.height)
+                    .toString()
+                val req = Request.Builder()
+                    .url("http://$host:$port/api/session")
+                    .header("Authorization", "Bearer $token")
+                    .post(body.toRequestBody(JSON))
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@withTimeoutOrNull null
+                    val raw = readBoundedBody(resp) ?: return@withTimeoutOrNull null
+                    val obj = JSONObject(raw)
+                    if (!obj.optBoolean("ok", false)) return@withTimeoutOrNull null
+                    val id = obj.optString("id")
+                    if (id.isBlank()) return@withTimeoutOrNull null
+                    SessionInfo(
+                        id = id,
+                        width = obj.optInt("width", identity.width),
+                        height = obj.optInt("height", identity.height),
+                        encoder = obj.optString("encoder", "unknown"),
+                        udpPort = obj.optInt("udp_port", 0),
+                        connector = obj.optString("connector"),
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "openSession failed: ${e.message}")
+                null
+            }
+        }
+    }
+
+    suspend fun closeSession(host: String, port: Int, token: String, id: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                val req = Request.Builder()
+                    .url("http://$host:$port/api/session?id=$id")
+                    .header("Authorization", "Bearer $token")
+                    .delete()
+                    .build()
+                client.newCall(req).execute().use { }
+            } catch (e: Exception) {
+                Log.v(TAG, "closeSession failed: ${e.message}")
             }
         }
     }

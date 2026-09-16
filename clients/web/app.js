@@ -260,6 +260,7 @@ let vncBannerTimer = null;
 let latencyWatchdog = null;
 const heldKeys = new Set();
 const pressedButtons = new Set();
+const activeTouches = new Map();
 let pendingMove = null;
 let moveRaf = null;
 
@@ -338,6 +339,7 @@ function releaseAllButtons() {
         sendInput({ Pointer: { Button: { button, pressed: false } } });
     }
     pressedButtons.clear();
+    releaseAllTouches();
     hideTouch();
 }
 
@@ -357,30 +359,92 @@ if (overlayEl) {
     });
 }
 
+function usesTouchInput(event) {
+    if (event.pointerType === "pen") return false;
+    return isTouchMode;
+}
+
+function sendTouchAt(pointerId, x, y, pressed) {
+    let rec = activeTouches.get(pointerId);
+    if (!rec) {
+        if (!pressed) return;
+        const used = new Set();
+        for (const t of activeTouches.values()) used.add(t.slot);
+        let slot = 0;
+        while (used.has(slot) && slot < 9) slot += 1;
+        rec = { slot, id: pointerId & 0x7fffffff };
+        activeTouches.set(pointerId, rec);
+    }
+    sendInput({ Touch: { slot: rec.slot, id: rec.id, x, y, pressed } });
+    if (!pressed) activeTouches.delete(pointerId);
+}
+
+function releaseAllTouches() {
+    for (const rec of activeTouches.values()) {
+        sendInput({ Touch: { slot: rec.slot, id: rec.id, x: 0, y: 0, pressed: false } });
+    }
+    activeTouches.clear();
+}
+
+function applyInputModeIcons() {
+    if (!iconMouse || !iconTouch) return;
+    if (isTouchMode) {
+        iconMouse.classList.add("hidden");
+        iconTouch.classList.remove("hidden");
+    } else {
+        iconMouse.classList.remove("hidden");
+        iconTouch.classList.add("hidden");
+    }
+}
+
 stageEl.addEventListener("pointerdown", (event) => {
     if (!streamActive) return;
     if (!isVncFocused) {
         setVncFocus(true);
     }
     event.preventDefault();
+    try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+    } catch (_) { /* capture is best-effort on older WebViews */ }
     const { x, y } = mapPointer(event);
-    sendPointerMove(x, y);
-    sendPointerButton(event.button + 1, true);
     if (event.pointerType === "pen") {
         sendStylus(x, y, event.pressure, event.tiltX, event.tiltY);
+        showTouch(event.clientX, event.clientY);
+        return;
     }
+    if (usesTouchInput(event)) {
+        sendTouchAt(event.pointerId, x, y, true);
+        showTouch(event.clientX, event.clientY);
+        return;
+    }
+    sendPointerMove(x, y);
+    sendPointerButton(event.button + 1, true);
     showTouch(event.clientX, event.clientY);
 });
 
 stageEl.addEventListener("pointermove", (event) => {
-    if (!streamActive || !isVncFocused) return;
+    if (!streamActive) return;
+    const touching = usesTouchInput(event) || activeTouches.has(event.pointerId);
+    if (!isVncFocused && !touching) return;
     event.preventDefault();
     const { x, y } = mapPointer(event);
+    if (event.pointerType === "pen") {
+        if (event.buttons > 0) {
+            sendStylus(x, y, event.pressure, event.tiltX, event.tiltY);
+            showTouch(event.clientX, event.clientY);
+        }
+        return;
+    }
+    if (touching) {
+        if (event.buttons > 0 || activeTouches.has(event.pointerId)) {
+            sendTouchAt(event.pointerId, x, y, true);
+            showTouch(event.clientX, event.clientY);
+        }
+        return;
+    }
+    if (!isVncFocused) return;
     if (event.buttons > 0) {
         showTouch(event.clientX, event.clientY);
-        if (event.pointerType === "pen") {
-            sendStylus(x, y, event.pressure, event.tiltX, event.tiltY);
-        }
         sendPointerMove(x, y);
     } else {
         queuePointerMove(x, y);
@@ -388,20 +452,47 @@ stageEl.addEventListener("pointermove", (event) => {
 });
 
 stageEl.addEventListener("pointerup", (event) => {
-    if (!streamActive || !isVncFocused) return;
+    if (!streamActive) return;
     event.preventDefault();
+    try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch (_) { /* already released */ }
+    const { x, y } = mapPointer(event);
+    if (event.pointerType === "pen") {
+        sendStylus(x, y, 0, event.tiltX, event.tiltY);
+        hideTouch();
+        return;
+    }
+    if (usesTouchInput(event) || activeTouches.has(event.pointerId)) {
+        sendTouchAt(event.pointerId, x, y, false);
+        if (activeTouches.size === 0) hideTouch();
+        return;
+    }
+    if (!isVncFocused) return;
     sendPointerButton(event.button + 1, false);
     hideTouch();
 });
 
-stageEl.addEventListener("pointerleave", () => {
-    if (isVncFocused) {
+stageEl.addEventListener("pointerleave", (event) => {
+    if (activeTouches.has(event.pointerId)) {
+        const { x, y } = mapPointer(event);
+        sendTouchAt(event.pointerId, x, y, false);
+        if (activeTouches.size === 0) hideTouch();
+        return;
+    }
+    if (isVncFocused && !isTouchMode) {
         releaseAllButtons();
     }
 });
 
-stageEl.addEventListener("pointercancel", () => {
-    if (isVncFocused) {
+stageEl.addEventListener("pointercancel", (event) => {
+    if (activeTouches.has(event.pointerId)) {
+        const { x, y } = mapPointer(event);
+        sendTouchAt(event.pointerId, x, y, false);
+        if (activeTouches.size === 0) hideTouch();
+        return;
+    }
+    if (isVncFocused && !isTouchMode) {
         releaseAllButtons();
     }
 });
@@ -442,19 +533,14 @@ window.addEventListener("keyup", (event) => {
     sendKey(event.code, false);
 });
 
+applyInputModeIcons();
+
 if (btnInputMode) {
     btnInputMode.addEventListener("click", (e) => {
         e.stopPropagation();
         isTouchMode = !isTouchMode;
-        if (isTouchMode) {
-            iconMouse.classList.add("hidden");
-            iconTouch.classList.remove("hidden");
-            showToast(t("modeTouch"));
-        } else {
-            iconMouse.classList.remove("hidden");
-            iconTouch.classList.add("hidden");
-            showToast(t("modeTouchpad"));
-        }
+        applyInputModeIcons();
+        showToast(isTouchMode ? t("modeTouch") : t("modeTouchpad"));
     });
 }
 
@@ -642,6 +728,7 @@ if (btnConnect && tokenInput) {
 function sendInput(payload) {
     const headers = { "content-type": "application/json" };
     if (authToken) headers.authorization = `Bearer ${authToken}`;
+    if (displaySessionId) headers["x-orbiscreen-session"] = displaySessionId;
     fetch("/input", {
         method: "POST",
         headers,
@@ -985,6 +1072,7 @@ function scheduleReconnect(reason) {
         reconnectTimer = null;
         (async () => {
             await refreshToken();
+            await openDisplaySession();
             startStream();
         })().catch((error) => {
             console.warn("reconnect attempt failed:", error);
@@ -1002,9 +1090,11 @@ function startStream() {
     destroyPlayer();
     setOverlayState("connecting", "Connecting", "Connecting to Linux virtual display…");
 
-    const streamUrl = authToken
-        ? `/stream?token=${encodeURIComponent(authToken)}`
-        : "/stream";
+    const params = new URLSearchParams();
+    if (authToken) params.set("token", authToken);
+    if (displaySessionId) params.set("session", displaySessionId);
+    const qs = params.toString();
+    const streamUrl = qs ? `/stream?${qs}` : "/stream";
 
     mpegtsPlayer = mpegts.createPlayer({
         type: "mpegts",
@@ -1074,6 +1164,61 @@ function startStream() {
     }, 250);
 }
 
+let displaySessionId = "";
+
+function webDeviceKey() {
+    const store = "orbiscreen.deviceKey";
+    try {
+        const existing = localStorage.getItem(store);
+        if (existing && /^[0-9a-f]{8}$/.test(existing)) {
+            return existing;
+        }
+        const bytes = new Uint8Array(4);
+        crypto.getRandomValues(bytes);
+        const key = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+        localStorage.setItem(store, key);
+        return key;
+    } catch (_) {
+        return "web";
+    }
+}
+
+async function openDisplaySession() {
+    if (!authToken) return;
+    try {
+        const body = {
+            name: (typeof navigator !== "undefined" && navigator.userAgent)
+                ? navigator.userAgent.split(/[()]/)[0].trim() || "web"
+                : "web",
+            key: webDeviceKey(),
+            width: window.screen?.width || displayWidth || 1920,
+            height: window.screen?.height || displayHeight || 1080,
+        };
+        const response = await fetch("/api/session", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`,
+            },
+            body: JSON.stringify(body),
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data && data.id) {
+            displaySessionId = data.id;
+            if (Number.isFinite(data.width) && Number.isFinite(data.height)) {
+                displayWidth = data.width;
+                displayHeight = data.height;
+            }
+            if (typeof data.encoder === "string") {
+                encoderName = data.encoder.toUpperCase();
+            }
+        }
+    } catch (error) {
+        console.warn("session open failed:", error);
+    }
+}
+
 async function start() {
     applyTheme(currentTheme);
     applyTranslations();
@@ -1103,6 +1248,7 @@ async function start() {
         console.warn("api/info fetch failed:", error);
     }
 
+    await openDisplaySession();
     updateInfoDisplay();
     startStream();
 }

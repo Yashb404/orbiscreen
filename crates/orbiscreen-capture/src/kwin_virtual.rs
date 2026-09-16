@@ -39,7 +39,65 @@ const PERMISSION_FILE_NAME: &str = "orbiscreen.kwin.desktop";
 pub struct KwinVirtualSpec {
     pub width: u32,
     pub height: u32,
-    pub output_name: Option<String>,
+    pub names: Vec<String>,
+    pub description: String,
+}
+
+impl KwinVirtualSpec {
+    pub fn unnamed(width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            names: Vec::new(),
+            description: "Orbiscreen Virtual Display".into(),
+        }
+    }
+}
+
+pub fn sanitize_client_name(raw: &str) -> String {
+    let mut slug = String::new();
+    let mut dash = false;
+    for ch in raw.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+            dash = false;
+        } else if !dash && !slug.is_empty() {
+            slug.push('-');
+            dash = true;
+        }
+        if slug.len() >= 32 {
+            break;
+        }
+    }
+    let slug = slug.trim_matches('-').to_string();
+    if slug.is_empty() {
+        "client".into()
+    } else {
+        slug
+    }
+}
+
+pub fn protocol_names_for(client_name: &str, device_key: Option<&str>) -> (String, Vec<String>) {
+    let trimmed = client_name.trim();
+    let description = if trimmed.is_empty() {
+        "OrbiScreen".to_string()
+    } else {
+        trimmed.to_string()
+    };
+    // KWin persists virtual-output settings by connectorName only (no EDID).
+    // Prefer a stable per-device key so two tablets with the same model
+    // name do not share one output. Description is label only.
+    let slug = device_key
+        .map(sanitize_client_name)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| sanitize_client_name(trimmed));
+    let base = format!("Orbi-{slug}");
+    let names = vec![
+        base.clone(),
+        format!("{base}-2"),
+        format!("{base}-{}", std::process::id()),
+    ];
+    (description, names)
 }
 
 #[derive(Debug, Error)]
@@ -422,7 +480,15 @@ pub fn select_tablet_output(outputs: &[KscreenOutput], preferred: Option<&str>) 
     if enabled.contains(&VIRTUAL_OUTPUT_CONNECTOR) {
         return Some(VIRTUAL_OUTPUT_CONNECTOR.to_string());
     }
-    None
+    enabled
+        .iter()
+        .copied()
+        .find(|n| {
+            n.starts_with("Virtual-Orbi-")
+                || n.starts_with("Virtual-OrbiScreen")
+                || n.starts_with("Virtual-orbi")
+        })
+        .map(str::to_string)
 }
 
 pub fn output_uuid(name: &str) -> Option<String> {
@@ -553,26 +619,38 @@ pub struct KwinVirtualCapture {
 impl KwinVirtualCapture {
     #[instrument(skip_all, fields(width = spec.width, height = spec.height))]
     pub fn open(spec: KwinVirtualSpec) -> Result<Self, KwinVirtualError> {
-        let base_name = spec
-            .output_name
-            .clone()
-            .unwrap_or_else(|| "ORBISCREEN".to_string());
-        let default_conn = format!("Virtual-{base_name}");
-        let pid_connector = format!("Virtual-{base_name}-{}", std::process::id());
-        if let Some(path) = kwin_output_config_path() {
-            for connector in [default_conn.as_str(), pid_connector.as_str()] {
-                match forget_saved_virtual_output(&path, connector) {
-                    Ok(true) => tracing::info!(
-                        file = %path.display(),
-                        connector,
-                        "cleared stale KWin config"
-                    ),
-                    Ok(false) => {}
-                    Err(e) => tracing::warn!(
-                        file = %path.display(),
-                        connector,
-                        "could not clear stale KWin virtual output config: {e}"
-                    ),
+        let names = if spec.names.is_empty() {
+            vec![
+                "ORBISCREEN".to_string(),
+                format!("ORBISCREEN-{}", std::process::id()),
+            ]
+        } else {
+            spec.names.clone()
+        };
+        let description = if spec.description.is_empty() {
+            "Orbiscreen Virtual Display".to_string()
+        } else {
+            spec.description.clone()
+        };
+        // Per-client connectors are the KWin identity key. Do not strip them
+        // from kwinoutputconfig.json or scale/position will not come back.
+        if spec.names.is_empty() {
+            if let Some(path) = kwin_output_config_path() {
+                for name in &names {
+                    let connector = format!("Virtual-{name}");
+                    match forget_saved_virtual_output(&path, &connector) {
+                        Ok(true) => tracing::info!(
+                            file = %path.display(),
+                            connector,
+                            "cleared stale KWin config"
+                        ),
+                        Ok(false) => {}
+                        Err(e) => tracing::warn!(
+                            file = %path.display(),
+                            connector,
+                            "could not clear stale KWin virtual output config: {e}"
+                        ),
+                    }
                 }
             }
         }
@@ -617,28 +695,30 @@ impl KwinVirtualCapture {
         let screencast: ZkdeScreencastUnstableV1 =
             registry.bind(global_name, version, &session.queue.handle(), ());
 
-        let names = if base_name == "ORBISCREEN" {
-            vec![
-                "ORBISCREEN".to_string(),
-                format!("ORBISCREEN-{}", std::process::id()),
-            ]
-        } else {
-            vec![
-                base_name.clone(),
-                format!("{}-{}", base_name, std::process::id()),
-            ]
-        };
         let mut last_err: Option<KwinVirtualError> = None;
         let mut stream = None;
         let mut node_id = None;
         let mut shared_ok: Option<Arc<StreamShared>> = None;
         let mut accepted_name: Option<String> = None;
+        let taken: Vec<String> = list_kscreen_outputs()
+            .into_iter()
+            .filter(|o| o.enabled)
+            .map(|o| o.name)
+            .collect();
         for name in names {
+            let connector = format!("Virtual-{name}");
+            if taken
+                .iter()
+                .any(|existing| existing.eq_ignore_ascii_case(&connector))
+            {
+                tracing::info!(connector, "skipping in-use KWin connector");
+                continue;
+            }
             let shared = Arc::new(StreamShared::default());
             let candidate = if version >= 4 {
                 screencast.stream_virtual_output_with_description(
                     name.clone(),
-                    "Orbiscreen Virtual Display".to_string(),
+                    description.clone(),
                     width,
                     height,
                     1.0,
@@ -778,7 +858,10 @@ impl KwinVirtualCapture {
             .map_err(|e| KwinVirtualError::Wayland(format!("State error: {e}")))?;
 
         let pump_interval = Duration::from_millis(16);
-        let damage_pump = super::damage_pump::spawn(accepted_name.clone(), pump_interval);
+        let hint = accepted_name
+            .clone()
+            .unwrap_or_else(|| VIRTUAL_OUTPUT_CONNECTOR.to_string());
+        let damage_pump = super::damage_pump::spawn(pump_interval, &hint);
 
         let ended = Arc::new(AtomicBool::new(false));
         let ended_notify = Arc::new(Notify::new());
@@ -810,7 +893,7 @@ impl KwinVirtualCapture {
             rx: tokio::sync::Mutex::new(rx),
             width: spec.width,
             height: spec.height,
-            connector: accepted_name.unwrap_or(default_conn),
+            connector: accepted_name.unwrap_or_else(|| VIRTUAL_OUTPUT_CONNECTOR.to_string()),
             stop,
             ended,
             ended_notify,
@@ -917,6 +1000,20 @@ fn pump_events(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_client_name_slug() {
+        assert_eq!(sanitize_client_name("Galaxy Tab S5e"), "Galaxy-Tab-S5e");
+        assert_eq!(sanitize_client_name("  "), "client");
+        assert_eq!(sanitize_client_name("SM-T725"), "SM-T725");
+        let (desc, names) = protocol_names_for("Galaxy Tab S5e", None);
+        assert_eq!(desc, "Galaxy Tab S5e");
+        assert_eq!(names[0], "Orbi-Galaxy-Tab-S5e");
+        assert_eq!(names[1], "Orbi-Galaxy-Tab-S5e-2");
+        let (desc, names) = protocol_names_for("Galaxy Tab S5e", Some("a1b2c3d4"));
+        assert_eq!(desc, "Galaxy Tab S5e");
+        assert_eq!(names[0], "Orbi-a1b2c3d4");
+    }
 
     #[test]
     fn forget_saved_virtual_output_drops_connector() {

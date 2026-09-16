@@ -88,10 +88,13 @@ class UdpPlayer {
         releaseCodec()
     }
 
-    fun start(host: String, port: Int, token: String, width: Int, height: Int): Boolean {
+    private var sessionId: String? = null
+
+    fun start(host: String, port: Int, token: String, width: Int, height: Int, session: String? = null): Boolean {
         stop()
         this.width = width
         this.height = height
+        this.sessionId = session
         return try {
             val addr = InetAddress.getByName(host)
             hostAddr = addr
@@ -103,7 +106,7 @@ class UdpPlayer {
             socket = sock
             running = true
             _event.value = StreamEvent.Connecting(Uri.parse("udp://$host:$port"))
-            sendRaw(encodeHello(token))
+            sendRaw(encodeHello(token, session))
             val buf = ByteArray(RECV_BUF)
             val pkt = DatagramPacket(buf, buf.size)
             val deadline = System.currentTimeMillis() + HELLO_WINDOW_MS
@@ -162,8 +165,12 @@ class UdpPlayer {
         recvJob = null
         pingJob = null
         watchdogJob = null
+        if (wasRunning) {
+            try { sendRaw(encodeBye(sessionId)) } catch (_: Exception) {}
+        }
         try { socket?.close() } catch (_: Exception) {}
         socket = null
+        sessionId = null
         releaseCodec()
         pending.clear()
         sps = null
@@ -446,9 +453,21 @@ class UdpPlayer {
         fun prepareReceive(pkt: DatagramPacket, buf: ByteArray) {
             pkt.length = buf.size
         }
-        fun encodeHello(token: String): ByteArray {
+
+        private const val TYPE_BYE: Byte = 10
+
+        fun encodeHello(token: String, session: String? = null): ByteArray {
             val t = token.toByteArray(Charsets.UTF_8)
-            return byteArrayOf('O'.code.toByte(), 'R'.code.toByte(), 'B'.code.toByte(), '1'.code.toByte(), TYPE_HELLO) + t
+            val extra = if (session.isNullOrBlank()) {
+                ByteArray(0)
+            } else {
+                byteArrayOf(0) + session.toByteArray(Charsets.UTF_8)
+            }
+            return byteArrayOf('O'.code.toByte(), 'R'.code.toByte(), 'B'.code.toByte(), '1'.code.toByte(), TYPE_HELLO) + t + extra
+        }
+        fun encodeBye(session: String?): ByteArray {
+            val extra = if (session.isNullOrBlank()) ByteArray(0) else session.toByteArray(Charsets.UTF_8)
+            return byteArrayOf('O'.code.toByte(), 'R'.code.toByte(), 'B'.code.toByte(), '1'.code.toByte(), TYPE_BYE) + extra
         }
         fun encodeCtrl(type: Byte): ByteArray =
             byteArrayOf('O'.code.toByte(), 'R'.code.toByte(), 'B'.code.toByte(), '1'.code.toByte(), type)

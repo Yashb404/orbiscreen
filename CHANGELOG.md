@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### ✨ Added
+- **Per-client KWin virtual outputs**:
+  - The daemon no longer creates a virtual monitor at start. Each client calls `POST /api/session` with name, a stable device key, and native size and gets its own output (`Virtual-Orbi-<key>`).
+  - Two tablets of the same model keep separate KWin layouts. The output closes on `DELETE /api/session` or UDP Bye.
+
+### 🐛 Fixed
+- **Dual-tablet touch stays on each virtual output**:
+  - `/input` carries `X-Orbiscreen-Session`. KWin bind introspects InputDevice nodes past `event63` (uinput often lands at `event256+`). Web touch mode posts absolute `Touch` instead of a relative mouse.
+  - Retry after a daemon restart opens a new session. An unknown session id no longer attaches to the only remaining display.
+
 ## [v0.28.8] - 2026-09-16
 
 Enhance daemon shutdown reliability by terminating lingering background processes on D-Bus stop timeouts or unowned session buses, clean orphaned audio sinks, harden the Android client video playback pipeline for legacy and low-end tablets, and bump the release matrix across all platforms.

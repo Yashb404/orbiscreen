@@ -1,6 +1,7 @@
 // Orbiscreen - main.rs (GPL-3.0-or-later)
 // https://github.com/shadow-x78/orbiscreen
 
+pub mod client_display;
 pub mod dbus;
 pub mod ui;
 
@@ -1138,6 +1139,209 @@ fn run_uninstall() -> ExitCode {
 
 type DynError = Box<dyn std::error::Error + Send + Sync>;
 
+fn uses_per_client_kwin(preferred: &str, caps: &Capabilities) -> bool {
+    match preferred {
+        "kwin-virtual" => true,
+        "auto" => {
+            caps.session == orbiscreen_capture::capabilities::SessionType::Wayland
+                && caps.compositor == orbiscreen_capture::capabilities::Compositor::Kde
+        }
+        _ => false,
+    }
+}
+
+fn resolve_client_dir() -> PathBuf {
+    std::env::var_os("ORBISCREEN_CLIENT_DIR")
+        .map(PathBuf::from)
+        .filter(|p| p.exists())
+        .or_else(|| {
+            if std::env::var_os("ORBISCREEN_CLIENT_DIR").is_some() {
+                warn!("ORBISCREEN_CLIENT_DIR does not exist; falling back to defaults");
+            }
+            let mut paths = vec![
+                std::env::current_dir()
+                    .unwrap_or_default()
+                    .join("clients")
+                    .join("web"),
+                PathBuf::from("/usr/share/orbiscreen/client"),
+                PathBuf::from("/app/share/orbiscreen/client"),
+            ];
+            if let Ok(home) = std::env::var("HOME") {
+                paths.insert(
+                    1,
+                    PathBuf::from(home).join(".local/share/orbiscreen/client"),
+                );
+            }
+            paths.into_iter().find(|p| p.exists())
+        })
+        .unwrap_or_else(|| PathBuf::from("clients/web"))
+}
+
+fn load_or_create_token() -> String {
+    let token_path = orbiscreen_core::default_token_path();
+    let saved_token = std::fs::read_to_string(&token_path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| s.len() >= 32);
+    let token_to_use = saved_token.unwrap_or_else(|| {
+        let t = orbiscreen_transport::generate_token();
+        if let Some(parent) = token_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt as _;
+                let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+            }
+        }
+        #[cfg(unix)]
+        {
+            use std::io::Write as _;
+            use std::os::unix::fs::OpenOptionsExt as _;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&token_path)
+            {
+                let _ = file.write_all(t.as_bytes());
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = std::fs::write(&token_path, &t);
+        }
+        t
+    });
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        if token_path.exists() {
+            let _ = std::fs::set_permissions(&token_path, std::fs::Permissions::from_mode(0o600));
+        }
+    }
+    token_to_use
+}
+
+async fn run_start_per_client(
+    cfg: Config,
+    no_mdns: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let is_running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    info!(
+        "Orbiscreen starting - per-client KWin outputs, encoder preferred = {enc}",
+        enc = cfg.encode.preferred_encoder,
+    );
+    let encode_kind =
+        EncoderKind::parse(&cfg.encode.preferred_encoder).unwrap_or(EncoderKind::Auto);
+    let displays = client_display::spawn_hub(client_display::HubConfig {
+        encode_kind,
+        bitrate_kbps: cfg.encode.bitrate_kbps,
+        refresh_hz: cfg.display.refresh_rate_hz,
+    });
+
+    let stats = std::sync::Arc::new(Stats::default());
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
+    let shutdown_keepalive = shutdown_tx.clone();
+    let dbus_handles = std::sync::Arc::new(dbus::DaemonHandles {
+        is_running: is_running.clone(),
+        stats: stats.clone(),
+        config: std::sync::RwLock::new(cfg.clone()),
+        encoder: "auto",
+        capture_backend: "kwin-virtual",
+        shutdown_tx,
+    });
+    tokio::spawn(async move {
+        if let Err(e) = dbus::run_dbus_server(dbus_handles).await {
+            warn!("D-Bus session service init failed (is D-Bus running?): {e}");
+        }
+    });
+    info!("D-Bus session service registered: com.orbiscreen.Daemon");
+
+    let (input_tx, _input_rx) = mpsc::channel::<orbiscreen_transport::IncomingInput>(8);
+    let (video_tx, video_rx) = mpsc::channel::<H264Packet>(8);
+    drop(video_tx);
+
+    let client_dir = resolve_client_dir();
+    let transport = Transport::with_token(
+        ServerConfig {
+            signaling_port: cfg.transport.signaling_port,
+            client_web_dir: client_dir,
+            enable_usb_supervisors: true,
+            output_connector: None,
+        },
+        input_tx,
+        Some(load_or_create_token()),
+    );
+    let token = transport.token().to_owned();
+    info!(
+        "stream access token active ({len} chars, prefix={prefix}); clients fetch it via mDNS TXT or /client/config.json",
+        len = token.len(),
+        prefix = token.get(..4).unwrap_or("")
+    );
+
+    let _mdns = if !no_mdns && cfg.transport.mdns_advertise {
+        match orbiscreen_transport::mdns::Advertiser::register(
+            &orbiscreen_transport::ServiceDescriptor {
+                instance: hostname::get()
+                    .ok()
+                    .and_then(|h| h.into_string().ok())
+                    .unwrap_or_else(|| "orbiscreen-host".into()),
+                port: cfg.transport.signaling_port,
+                token: Some(token.clone()),
+            },
+        ) {
+            Ok(a) => Some(a),
+            Err(e) => {
+                warn!("mDNS advertise failed (non-fatal): {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    ui::print_banner();
+    ui::print_startup_card(
+        "per-client (created on connect)",
+        cfg.encode.preferred_encoder.as_str(),
+        "kwin-virtual",
+        cfg.transport.signaling_port,
+        &token,
+        true,
+    );
+
+    let mut serve_fut = std::pin::pin!(transport.serve(
+        video_rx,
+        stats,
+        cfg.display.width,
+        cfg.display.height,
+        cfg.display.refresh_rate_hz,
+        "auto",
+        shutdown_rx.clone(),
+        None,
+        Some(displays),
+    ));
+
+    tokio::select! {
+        res = &mut serve_fut => {
+            res.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            info!("Received SIGINT (Ctrl-C), initiating graceful shutdown...");
+            _ = shutdown_keepalive.send(true);
+            let _ = (&mut serve_fut).await;
+        }
+        _ = shutdown_rx.changed() => {
+            info!("D-Bus Stop received, initiating graceful shutdown...");
+            _ = shutdown_keepalive.send(true);
+            let _ = (&mut serve_fut).await;
+        }
+    }
+    is_running.store(false, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+}
+
 async fn try_capture_step(
     step: CaptureStep,
     spec: VirtualDisplaySpec,
@@ -1522,52 +1726,22 @@ async fn bind_kwin_virtual_inputs(preferred_output: String) {
             continue;
         };
         if let Ok(conn) = zbus::Connection::session().await {
-            let mut bound = 0;
-            for idx in 0..64 {
-                let path = format!("/org/kde/KWin/InputDevice/event{idx}");
-                if let Ok(proxy) = zbus::Proxy::new(
-                    &conn,
-                    "org.kde.KWin",
-                    path.as_str(),
-                    "org.kde.KWin.InputDevice",
-                )
-                .await
-                {
-                    if let Ok(name) = proxy.get_property::<String>("name").await {
-                        let is_secondary = target_output.contains('2');
-                        let is_match = if is_secondary {
-                            name.starts_with("Orbiscreen 2")
-                        } else {
-                            name.starts_with("Orbiscreen Virtual")
-                        };
-                        let is_touch_or_tablet =
-                            name.contains("Touchscreen") || name.contains("Tablet");
-                        if is_match && is_touch_or_tablet {
-                            if let Err(e) = proxy
-                                .set_property::<&str>("outputName", target_output.as_str())
-                                .await
-                            {
-                                warn!(
-                                    "could not set outputName={target_output} on {path} ({name}): {e}"
-                                );
-                                continue;
-                            }
-                            if let Some(uuid) =
-                                orbiscreen_capture::kwin_virtual::output_uuid(&target_output)
-                            {
-                                let _ = proxy
-                                    .set_property::<&str>("outputUuid", uuid.as_str())
-                                    .await;
-                            }
-                            let _ = proxy.set_property::<bool>("mapToWorkspace", false).await;
-                            info!(
-                                "bound KWin input device {path} ({name}) to output {target_output}"
-                            );
-                            bound += 1;
-                        }
-                    }
-                }
-            }
+            let is_secondary = target_output.contains('2');
+            let bound = crate::client_display::bind_named_kwin_devices(
+                &conn,
+                target_output.as_str(),
+                |name| {
+                    let is_match = if is_secondary {
+                        name.starts_with("Orbiscreen 2")
+                    } else {
+                        name.starts_with("Orbiscreen Virtual")
+                    };
+                    let is_touch_or_tablet =
+                        name.contains("Touchscreen") || name.contains("Tablet");
+                    is_match && is_touch_or_tablet
+                },
+            )
+            .await;
             if bound >= 2 {
                 break;
             }
@@ -2201,6 +2375,7 @@ async fn run_secondary_display_session(
         width: spec.width,
         height: spec.height,
         output_name: target_kwin_output.clone(),
+        device_label: None,
     };
     tokio::spawn(async move {
         match InputInjector::open_async(input_spec).await {
@@ -2441,6 +2616,7 @@ async fn run_secondary_display_session(
         encoder_name,
         shutdown_rx.clone(),
         Some(idr_tx),
+        None,
     ));
 
     tokio::select! {
@@ -2552,6 +2728,9 @@ async fn run_start(
 
     let preferred = cfg.capture.preferred.as_str();
     let caps = Capabilities::from_env();
+    if uses_per_client_kwin(preferred, &caps) {
+        return run_start_per_client(cfg, no_mdns).await;
+    }
     let frame_pool = orbiscreen_core::frame_pool::FramePool::new();
     let mut source = resolve_frame_source(preferred, &caps, spec, &frame_pool).await?;
     let virtual_output = source.virtual_output_lease();
@@ -2598,6 +2777,7 @@ async fn run_start(
         width: spec.width,
         height: spec.height,
         output_name: captured_output_name.clone(),
+        device_label: None,
     };
     tokio::spawn(async move {
         match InputInjector::open_async(input_spec).await {
@@ -3059,6 +3239,7 @@ async fn run_start(
             encoder_name,
             shutdown_rx,
             Some(idr_tx),
+            None,
         )
         .await
     {
