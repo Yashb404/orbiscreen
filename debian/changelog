@@ -1,3 +1,13 @@
+orbiscreen (0.28.7-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.28.7 for Ubuntu noble.
+  * Eliminate frozen video stream on low-end and legacy Android tablets.
+  * Relax ExoPlayer shouldDropOutputBuffer threshold from -50ms to -250ms to absorb decode jitter.
+  * Configure shouldDropBuffersToKeyframe to request IDR on lag exceeding 300ms without dropping frames.
+  * Parse display geometry from kscreen-doctor to automatically position KWin virtual displays adjacent to active monitors.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Wed, 16 Sep 2026 09:30:00 +0300
+
 orbiscreen (0.28.6-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.28.6 for Ubuntu noble.

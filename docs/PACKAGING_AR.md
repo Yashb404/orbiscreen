@@ -3,6 +3,7 @@
 # دليل التغليف متعدد التوزيعات - Orbiscreen
 
 [![الإصدار](https://img.shields.io/badge/version-0.28.6-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![الإصدار](https://img.shields.io/badge/version-0.28.7-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![الرخصة](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-16a34a?style=flat-square&logo=rust)
 ![المنصّة](https://img.shields.io/badge/platform-Linux%20%7C%20Android-9333ea?style=flat-square&logo=linux)
@@ -13,6 +14,7 @@
 ## 📦 مصفوفة حزم التوزيعات
 
 مصفوفة الإصدار: `0.28.6` (مساحة العمل)، `versionCode = 99` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع - راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
+مصفوفة الإصدار: `0.28.7` (مساحة العمل)، `versionCode = 100` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع - راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
 
 يوفّر Orbiscreen تكوينات البناء وتعريفات الحزم لجميع توزيعات Linux الرئيسية وAndroid:
 

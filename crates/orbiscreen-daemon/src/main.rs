@@ -2135,15 +2135,18 @@ async fn run_secondary_display_session(
             tokio::time::sleep(std::time::Duration::from_millis(150)).await;
             let enable_spec = format!("output.{sec_name}.enable");
             let scale_spec = format!("output.{sec_name}.scale.1");
+            let next_x = orbiscreen_capture::kwin_virtual::next_available_output_x(&sec_name);
+            let pos_spec = format!("output.{sec_name}.position.{next_x},0");
             for _ in 0..5 {
                 let status = tokio::process::Command::new("kscreen-doctor")
                     .arg(&enable_spec)
                     .arg(&scale_spec)
+                    .arg(&pos_spec)
                     .status()
                     .await;
                 if let Ok(s) = status {
                     if s.success() {
-                        info!("Enabled and scaled KWin output {sec_name}");
+                        info!("Enabled and scaled KWin output {sec_name} at position {next_x},0");
                         break;
                     }
                 }
@@ -2527,15 +2530,18 @@ async fn run_start(
             tokio::time::sleep(std::time::Duration::from_millis(150)).await;
             let enable_spec = format!("output.{name_str}.enable");
             let scale_spec = format!("output.{name_str}.scale.1");
+            let next_x = orbiscreen_capture::kwin_virtual::next_available_output_x(&name_str);
+            let pos_spec = format!("output.{name_str}.position.{next_x},0");
             for _ in 0..5 {
                 let status = tokio::process::Command::new("kscreen-doctor")
                     .arg(&enable_spec)
                     .arg(&scale_spec)
+                    .arg(&pos_spec)
                     .status()
                     .await;
                 if let Ok(s) = status {
                     if s.success() {
-                        info!("Enabled and scaled KWin output {name_str}");
+                        info!("Enabled and scaled KWin output {name_str} at position {next_x},0");
                         break;
                     }
                 }

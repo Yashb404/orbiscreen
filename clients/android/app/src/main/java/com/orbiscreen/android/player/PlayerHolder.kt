@@ -451,15 +451,13 @@ private class LowLatencyVideoRenderer(
     }
 
     override fun shouldDropBuffersToKeyframe(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
-        if (earlyUs < -120_000) {
+        if (earlyUs < -300_000) {
             onLagDetected()
-            return true
         }
         return false
     }
 
     override fun shouldDropOutputBuffer(earlyUs: Long, elapsedRealtimeUs: Long, isLastBuffer: Boolean): Boolean {
-        return earlyUs < -50_000
-        return false
+        return earlyUs < -250_000
     }
 }

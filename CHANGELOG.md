@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.28.7] - 2026-09-16
+
+Eliminate frozen video stream and permanent frame drops on low-end and legacy Android tablets, relax ExoPlayer buffer drop thresholds to absorb decode jitter without dropping frames, prevent cascading drop-to-keyframe state, automatically calculate display geometry from kscreen-doctor to position KWin virtual displays adjacent to active screens, and bump version across workspace, packages, and documentation.
+
+### 🐛 Bug Fixes
+- **ExoPlayer Low-Latency Frame Drop Tuning (`PlayerHolder.kt`)**:
+  - Relaxed `shouldDropOutputBuffer` threshold from -50 ms to -250 ms in `LowLatencyVideoRenderer`, preventing weak SoCs (e.g. Allwinner, Rockchip, older Mali/Adreno architectures) from discarding late-decoded frames and freezing on the initial desktop wallpaper.
+  - Reconfigured `shouldDropBuffersToKeyframe` to request on-demand IDR frames via `onLagDetected()` when latency exceeds 300 ms while returning `false`, eliminating permanent frame drop lockouts during live streaming.
+  - Cleaned dead unreachable code in `LowLatencyVideoRenderer`.
+- **KWin Virtual Display Auto-Positioning (`kwin_virtual.rs`, `main.rs`)**:
+  - Added display geometry parsing to `parse_kscreen_outputs` in `orbiscreen-capture` to extract X/Y offsets and dimensions from `kscreen-doctor -o`.
+  - Implemented `next_available_output_x` helper to locate the maximum right boundary across all active physical displays.
+  - Automatically passed `position.<max_x>,0` to `kscreen-doctor` when enabling primary and secondary virtual displays, ensuring newly created virtual screens seamlessly align to the right of physical monitors so mouse cursors and desktop windows navigate directly onto tablets.
+
+### 📦 Packaging & Versions
+- **Workspace & Packaging**:
+  - Bumped Cargo workspace package version to `0.28.7`.
+  - Incremented Android client `versionCode` to `100`; updated `versionName` to `"0.28.7"`.
+  - Updated `tauri.conf.json` version to `0.28.7`.
+  - Bumped PKGBUILD `pkgver` to `0.28.7`.
+  - Added `0.28.7-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+  - Synchronized documentation badges across all architecture and specification guides.
+
+---
+
 ## [v0.28.6] - 2026-09-16
 
 Enable dynamic virtual display resolution and framerate switching directly from the desktop GUI Display & Input settings, connect GUI chips to new D-Bus SetResolution method to immediately apply modes via kscreen-doctor and persist changes to orbiscreen.toml, synchronize active resolution and framerate chips with daemon status on startup, and add Arch Linux PKGBUILD build instructions to documentation and packaging guides.

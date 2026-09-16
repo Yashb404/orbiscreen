@@ -290,6 +290,7 @@ pub struct KscreenOutput {
     pub name: String,
     pub uuid: Option<String>,
     pub enabled: bool,
+    pub geometry: Option<(i32, i32, u32, u32)>,
 }
 
 fn strip_ansi(text: &str) -> String {
@@ -330,6 +331,7 @@ pub fn parse_kscreen_outputs(text: &str) -> Vec<KscreenOutput> {
                     name: name.to_string(),
                     uuid,
                     enabled: false,
+                    geometry: None,
                 });
             }
         } else if line.trim() == "enabled" {
@@ -340,12 +342,45 @@ pub fn parse_kscreen_outputs(text: &str) -> Vec<KscreenOutput> {
             if let Some(cur) = current.as_mut() {
                 cur.enabled = false;
             }
+        } else if let Some(geom) = line.trim().strip_prefix("Geometry: ") {
+            let mut parts = geom.split_whitespace();
+            if let (Some(pos), Some(size)) = (parts.next(), parts.next()) {
+                let mut pos_parts = pos.split(',');
+                let mut size_parts = size.split('x');
+                if let (Some(x_str), Some(y_str), Some(w_str), Some(h_str)) = (
+                    pos_parts.next(),
+                    pos_parts.next(),
+                    size_parts.next(),
+                    size_parts.next(),
+                ) {
+                    if let (Ok(x), Ok(y), Ok(w), Ok(h)) = (
+                        x_str.parse::<i32>(),
+                        y_str.parse::<i32>(),
+                        w_str.parse::<u32>(),
+                        h_str.parse::<u32>(),
+                    ) {
+                        if let Some(cur) = current.as_mut() {
+                            cur.geometry = Some((x, y, w, h));
+                        }
+                    }
+                }
+            }
         }
     }
     if let Some(done) = current {
         out.push(done);
     }
     out
+}
+
+pub fn next_available_output_x(exclude_output: &str) -> i32 {
+    list_kscreen_outputs()
+        .into_iter()
+        .filter(|o| o.enabled && o.name != exclude_output)
+        .filter_map(|o| o.geometry)
+        .map(|(x, _y, w, _h)| x + w as i32)
+        .max()
+        .unwrap_or(0)
 }
 
 fn is_portal_virtual_output(name: &str) -> bool {
@@ -929,25 +964,37 @@ disabled
                 KscreenOutput {
                     name: "eDP-1".into(),
                     uuid: Some("8d4cd7b2-4072-46fe-9076-a472ff599d3e".into()),
-                    enabled: true
+                    enabled: true,
+                    geometry: Some((0, 0, 1920, 1200)),
                 },
                 KscreenOutput {
                     name: "DP-6".into(),
                     uuid: Some("2185e147-5700-4a76-95c7-4ca01c705bea".into()),
-                    enabled: true
+                    enabled: true,
+                    geometry: Some((1920, 0, 2560, 1440)),
                 },
                 KscreenOutput {
                     name: "Virtual-virtual-xdp-kde-".into(),
                     uuid: Some("3ab51ad6-f454-4c80-bee1-bb69124801de".into()),
-                    enabled: true
+                    enabled: true,
+                    geometry: Some((4480, 0, 1920, 1080)),
                 },
                 KscreenOutput {
                     name: "Virtual-ORBISCREEN".into(),
                     uuid: Some("deadbeef-0000-0000-0000-000000000000".into()),
-                    enabled: false
+                    enabled: false,
+                    geometry: None,
                 },
             ]
         );
+        let max_x = outs
+            .iter()
+            .filter(|o| o.enabled && o.name != "Virtual-ORBISCREEN")
+            .filter_map(|o| o.geometry)
+            .map(|(x, _, w, _)| x + w as i32)
+            .max()
+            .unwrap_or(0);
+        assert_eq!(max_x, 6400);
         assert_eq!(
             select_tablet_output(&outs, Some(VIRTUAL_OUTPUT_CONNECTOR)).as_deref(),
             None
@@ -962,6 +1009,7 @@ disabled
             name: "Virtual-ORBISCREEN-123".into(),
             uuid: Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into()),
             enabled: true,
+            geometry: None,
         });
         assert_eq!(
             select_tablet_output(&with_orbi, Some("Virtual-ORBISCREEN-123")).as_deref(),

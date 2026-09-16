@@ -9,6 +9,7 @@
 # ── Metadata ──
 Name:           orbiscreen
 Version:        0.28.6
+Version:        0.28.7
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -142,6 +143,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Wed Sep 16 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.7-1
+- Release 0.28.7: Eliminate frozen video stream on low-end and legacy Android tablets; relax ExoPlayer shouldDropOutputBuffer threshold from -50ms to -250ms to absorb decode jitter without dropping frames; configure shouldDropBuffersToKeyframe to request IDR on lag exceeding 300ms without discarding P-frames; parse display geometry from kscreen-doctor to automatically position KWin virtual displays adjacent to active physical monitors; bump version across workspace and documentation.
+
 * Wed Sep 16 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.6-1
 - Release 0.28.6: Enable live virtual display resolution and framerate switching from desktop GUI Display settings; wire D-Bus SetResolution method to kscreen-doctor dynamic modes and persistent orbiscreen.toml config; synchronize UI active resolution and framerate chips with daemon status; document Arch Linux PKGBUILD build instructions in README and packaging guides.
 
