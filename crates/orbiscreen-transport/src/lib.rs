@@ -59,6 +59,7 @@ pub struct ServerConfig {
     pub signaling_port: u16,
     pub client_web_dir: PathBuf,
     pub enable_usb_supervisors: bool,
+    pub output_connector: Option<String>,
 }
 
 #[derive(Debug)]
@@ -654,11 +655,12 @@ async fn api_control(
                 .and_then(|v| v.as_u64())
                 .unwrap_or(60)
                 .clamp(30, 240) as u32;
-            let target_output = if state.config.signaling_port == 8790 {
+            let fallback = if state.config.signaling_port == 8790 {
                 "Virtual-ORBISCREEN-2"
             } else {
                 "Virtual-ORBISCREEN"
             };
+            let target_output = state.config.output_connector.as_deref().unwrap_or(fallback);
             info!("host control: requested resolution change on {target_output} to {width}x{height}@{fps}Hz");
             let mode_str = format!("output.{target_output}.mode.{width}x{height}@{fps}");
             let res = tokio::process::Command::new("kscreen-doctor")

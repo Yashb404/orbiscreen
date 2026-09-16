@@ -2087,10 +2087,15 @@ async fn run_secondary_display_session(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let secondary_port = cfg.transport.signaling_port + 2;
+    let (sec_w, sec_h) = if cfg.display.width > 1280 {
+        (1280, 720)
+    } else {
+        (cfg.display.width, cfg.display.height)
+    };
     let spec = VirtualDisplaySpec {
-        width: cfg.display.width,
-        height: cfg.display.height,
-        refresh_rate_hz: cfg.display.refresh_rate_hz,
+        width: sec_w,
+        height: sec_h,
+        refresh_rate_hz: cfg.display.refresh_rate_hz.min(60),
     };
 
     info!(
@@ -2172,9 +2177,10 @@ async fn run_secondary_display_session(
         Some(kind) => kind,
         None => EncoderKind::Auto,
     };
+    let sec_bitrate = cfg.encode.bitrate_kbps.min(3500);
     let mut encoder = Encoder::new(EncodeParams {
         kind: encoder_kind,
-        bitrate_kbps: cfg.encode.bitrate_kbps,
+        bitrate_kbps: sec_bitrate,
         width: actual_dims.0,
         height: actual_dims.1,
         framerate: spec.refresh_rate_hz,
@@ -2300,6 +2306,7 @@ async fn run_secondary_display_session(
                 if let Some(rx) = pending_rx.as_mut() {
                     match rx.try_recv() {
                         Ok(inj) => {
+                            info!("secondary input injector is now active");
                             injector = Some(inj);
                             pending_rx = None;
                         }
@@ -2374,6 +2381,7 @@ async fn run_secondary_display_session(
             signaling_port: secondary_port,
             client_web_dir: client_dir,
             enable_usb_supervisors: false,
+            output_connector: Some("Virtual-ORBISCREEN-2".to_string()),
         },
         input_tx,
         Some(token),
@@ -2935,6 +2943,7 @@ async fn run_start(
             signaling_port: cfg.transport.signaling_port,
             client_web_dir: client_dir.clone(),
             enable_usb_supervisors: true,
+            output_connector: Some("Virtual-ORBISCREEN".to_string()),
         },
         input_tx,
         Some(token_to_use),

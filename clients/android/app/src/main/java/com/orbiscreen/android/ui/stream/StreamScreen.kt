@@ -391,6 +391,9 @@ fun StreamScreen(
                     viewModel.updateDimensions(w, h, label)
                     showSettingsSheet = false
                 },
+                onScaleModeChange = { modeKey ->
+                    viewModel.setScaleModeByKey(modeKey)
+                },
                 onPointerSpeedChange = { speed ->
                     viewModel.setPointerSpeed(speed)
                 },
@@ -489,6 +492,7 @@ private fun ConnectionSettingsSheet(
     currentHeight: Int,
     currentPointerSpeed: Float,
     onApplyDimensions: (Int, Int, String) -> Unit,
+    onScaleModeChange: (String) -> Unit,
     onPointerSpeedChange: (Float) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -583,7 +587,7 @@ private fun ConnectionSettingsSheet(
                                 onClick = {
                                     scaleMode = key
                                     prefs.scaleMode = key
-                                    onApplyDimensions(currentWidth, currentHeight, key)
+                                    onScaleModeChange(key)
                                 },
                                 shape = RoundedCornerShape(10.dp),
                                 color = if (isSel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,

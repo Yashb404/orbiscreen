@@ -1,3 +1,16 @@
+orbiscreen (0.28.5-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.28.5 for Ubuntu noble.
+  * Send FRAME_FLAG_RESET on host shutdown to trigger immediate AOA accessory teardown in Android client.
+  * Check host health endpoint before reporting USB ready to eliminate stale connection state after daemon exit.
+  * Fix fit mode selection by mapping scale modes to engine integer values and applying them in real-time.
+  * Clarify pointer speed UI controls for trackpad mode.
+  * Resolve secondary display touch injection drop in uinput injector by tracking MT Type B slot IDs.
+  * Expand OkHttp client concurrent request limits to prevent touch event queue stalls.
+  * Configure lightweight default capture profile (720p@60Hz, 3500 kbps) for secondary display to eliminate bus congestion.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Wed, 16 Sep 2026 07:30:00 +0300
+
 orbiscreen (0.28.4-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.28.4 for Ubuntu noble.

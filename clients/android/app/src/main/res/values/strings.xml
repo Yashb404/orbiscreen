@@ -108,7 +108,7 @@
     <string name="cancel">Cancel</string>
     <string name="usb_status_label">USB Connected</string>
     <string name="wifi_status_label">Wi\u2011Fi Connected</string>
-    <string name="pointer_speed_title">Pointer Speed</string>
+    <string name="pointer_speed_title">Pointer Speed (Trackpad)</string>
     <string name="pointer_speed_slow">Slow</string>
     <string name="pointer_speed_normal">Normal</string>
     <string name="pointer_speed_fast">Fast</string>

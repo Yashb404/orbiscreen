@@ -32,6 +32,7 @@ object UsbAccessoryManager {
     private const val FRAME_FLAG_DATA: Byte = 0x01
     private const val FRAME_FLAG_OPEN: Byte = 0x02
     private const val FRAME_FLAG_CLOSE: Byte = 0x04
+    private const val FRAME_FLAG_RESET: Byte = 0x08
     private const val FRAME_HEADER_LEN = 5
     private const val MAX_PAYLOAD_LEN = 16384
 
@@ -258,6 +259,11 @@ object UsbAccessoryManager {
                 val totalFrameLen = FRAME_HEADER_LEN + payloadLen
 
                 if (accLen - offset < totalFrameLen) break
+
+                if ((flags.toInt() and FRAME_FLAG_RESET.toInt()) != 0) {
+                    stopAccessory()
+                    break
+                }
 
                 if ((flags.toInt() and FRAME_FLAG_DATA.toInt()) != 0 && payloadLen > 0) {
                     val sock = activeStreams[streamId]

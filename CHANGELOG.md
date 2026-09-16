@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.28.5] - 2026-09-16
+
+Send FRAME_FLAG_RESET on host shutdown to trigger immediate AOA accessory teardown in Android client, check host health endpoint before reporting USB ready to eliminate stale connection state after daemon exit, fix fit mode selection by mapping scale modes to engine integer values and applying them in real-time, clarify pointer speed UI controls for trackpad mode, resolve secondary display touch injection drop in uinput injector by tracking MT Type B slot IDs, expand OkHttp client concurrent request limits to prevent touch event queue stalls, and configure lightweight default capture profile (720p@60Hz, 3500 kbps) for secondary display to eliminate bus congestion.
+
+### 🐛 Bug Fixes
+- **USB Teardown & Connection State Recovery**:
+  - Added `FRAME_FLAG_RESET` (0x08) to AOA protocol and sent a reset frame before releasing the USB interface on host daemon shutdown.
+  - Handled `FRAME_FLAG_RESET` in Android `UsbAccessoryManager` to immediately close active accessory file descriptors and clear running state.
+  - Enhanced `HostApi.probeUsb` to verify the host `/health` endpoint before reporting ready, automatically stopping stale accessory sessions when the server is terminated.
+  - Isolated initial attachment check in `DiscoveryScreen` to eliminate continuous accessory recreation while daemon is offline.
+- **Scale Mode (Fit Mode) Application & Persistence**:
+  - Corrected `ConnectionSettingsSheet` in `StreamScreen` to invoke `onScaleModeChange` instead of erroneously calling resolution resize with string keys.
+  - Mapped scale mode strings ("fit", "fill", "100") to integer resize modes (0 = Fit, 3 = Fill, 4 = Zoom) in `StreamViewModel` and `PlayerSurface`.
+  - Persisted user selected scale mode in `PrefsStore` and restored it upon stream initialization.
+- **Pointer Speed UI Clarification**:
+  - Updated string resources in English and Arabic to explicitly indicate "Pointer Speed (Trackpad)" / "سرعة المؤشر (لوحة اللمس)" to clarify that pointer sensitivity applies to relative trackpad mode rather than absolute 1:1 touch.
+- **Secondary Display Input Ingestion & Multi-Device Stability**:
+  - Resolved touch input discard on secondary displays in `crates/orbiscreen-input/src/x11.rs` by tracking MT Type B tracking IDs, asserting `BTN_TOUCH`, and synthesizing tracking ID resets upon slot desynchronization.
+  - Configured OkHttp dispatcher concurrency (`maxRequests = 64`, `maxRequestsPerHost = 64`) in `InputDispatcher` to prevent touch move packet stalling and dropped `ACTION_UP` events.
+  - Configured lightweight default capture profile for secondary display (1280x720@60Hz with 3500 kbps max bitrate) to prevent saturating shared USB controller bandwidth across multiple devices.
+  - Added explicit `output_connector` routing for primary (`Virtual-ORBISCREEN`) and secondary (`Virtual-ORBISCREEN-2`) transports.
+
+### 📦 Packaging & Versions
+- **Cargo Workspace**: Bumped workspace package version to `0.28.5`.
+- **Android Client**: Incremented `versionCode` to `98`; updated `versionName` to `"0.28.5"`.
+- **Tauri GUI**: Updated `tauri.conf.json` version to `0.28.5`.
+- **PKGBUILD**: Bumped `pkgver` to `0.28.5`.
+- **debian/changelog**: Added `0.28.5-1` release entry for Ubuntu noble.
+- **data/orbiscreen-copr.spec**: Bumped version to `0.28.5`.
+
+---
+
 ## [v0.28.4] - 2026-09-16
 
 Fix Android tablet black screen over USB (AOA) by expanding MPEG-TS transmission buffer capacity to 2048 chunks, eliminating video pipeline packet dropping in appsrc and appsink, optimizing USB bulk transfer framing to prevent packet fragmentation, initializing keepalive frames cleanly only after first real frame capture, and resolving daemon stop deadlock by removing the watch channel race condition.

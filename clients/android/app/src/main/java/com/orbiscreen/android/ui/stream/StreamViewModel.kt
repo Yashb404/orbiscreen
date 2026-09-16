@@ -48,11 +48,18 @@ class StreamViewModel(
     private var sessionToken: String? = null
     private var lastIdrAtMs = 0L
 
+    private fun scaleModeFromPref(pref: String): Int = when (pref) {
+        "fill" -> 3
+        "100" -> 4
+        else -> 0
+    }
+
     private val _state = MutableStateFlow(
         StreamState(
             host = host,
             port = port,
             event = StreamEvent.Connecting(android.net.Uri.parse("http://$host:$port/stream")),
+            scaleMode = scaleModeFromPref(prefs.scaleMode),
         )
     )
     val state: StateFlow<StreamState> = _state.asStateFlow()
@@ -204,6 +211,11 @@ class StreamViewModel(
 
     fun setScaleMode(mode: Int) {
         _state.value = _state.value.copy(scaleMode = mode)
+    }
+
+    fun setScaleModeByKey(key: String) {
+        prefs.scaleMode = key
+        _state.value = _state.value.copy(scaleMode = scaleModeFromPref(key))
     }
 
     fun updateDimensions(w: Int, h: Int, label: String = "${w}x${h}", fps: Int = 60) {

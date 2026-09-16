@@ -58,6 +58,7 @@ const AOA_START_ACCESSORY: u8 = 53;
 const FRAME_FLAG_DATA: u8 = 0x01;
 const FRAME_FLAG_OPEN: u8 = 0x02;
 const FRAME_FLAG_CLOSE: u8 = 0x04;
+const FRAME_FLAG_RESET: u8 = 0x08;
 const FRAME_HEADER_LEN: usize = 5;
 const MAX_PAYLOAD_LEN: usize = 16384;
 
@@ -593,6 +594,11 @@ pub fn run_accessory_bridge(
             }
         }
     }
+
+    let mut reset_frame = vec![0u8; FRAME_HEADER_LEN];
+    reset_frame[2] = FRAME_FLAG_RESET;
+    let _ = prio_tx.send(reset_frame);
+    std::thread::sleep(Duration::from_millis(60));
 
     running.store(false, Ordering::Relaxed);
     {

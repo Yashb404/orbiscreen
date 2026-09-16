@@ -90,7 +90,19 @@ class HostApi {
     suspend fun probeUsb(port: Int): UsbProbeResult = withContext(Dispatchers.IO) {
         if (com.orbiscreen.android.usb.UsbAccessoryManager.isAoaActive) {
             val localPort = com.orbiscreen.android.usb.UsbAccessoryManager.localProxyPort
-            return@withContext UsbProbeResult.Ready("127.0.0.1", localPort, isAoa = true)
+            val ok = withTimeoutOrNull(350) {
+                try {
+                    val req = Request.Builder().url("http://127.0.0.1:$localPort/health").build()
+                    client.newCall(req).execute().use { resp -> resp.isSuccessful }
+                } catch (_: Exception) {
+                    false
+                }
+            } ?: false
+            if (ok) {
+                return@withContext UsbProbeResult.Ready("127.0.0.1", localPort, isAoa = true)
+            } else {
+                com.orbiscreen.android.usb.UsbAccessoryManager.stopAccessory()
+            }
         }
 
         val candidates = mutableListOf(

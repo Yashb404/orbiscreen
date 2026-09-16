@@ -32,7 +32,11 @@ class InputDispatcher(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val http = OkHttpClient.Builder()
-        .connectionPool(okhttp3.ConnectionPool(8, 2, TimeUnit.MINUTES))
+        .dispatcher(okhttp3.Dispatcher().apply {
+            maxRequests = 64
+            maxRequestsPerHost = 64
+        })
+        .connectionPool(okhttp3.ConnectionPool(16, 2, TimeUnit.MINUTES))
         .connectTimeout(1, TimeUnit.SECONDS)
         .readTimeout(1, TimeUnit.SECONDS)
         .writeTimeout(1, TimeUnit.SECONDS)

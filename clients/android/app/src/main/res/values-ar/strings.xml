@@ -108,7 +108,7 @@
     <string name="cancel">إلغاء</string>
     <string name="usb_status_label">USB متصل</string>
     <string name="wifi_status_label">Wi\u2011Fi متصل</string>
-    <string name="pointer_speed_title">سرعة المؤشر</string>
+    <string name="pointer_speed_title">سرعة المؤشر (لوحة اللمس)</string>
     <string name="pointer_speed_slow">بطيء</string>
     <string name="pointer_speed_normal">عادي</string>
     <string name="pointer_speed_fast">سريع</string>

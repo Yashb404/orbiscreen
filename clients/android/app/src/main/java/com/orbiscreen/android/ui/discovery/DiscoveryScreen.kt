@@ -284,11 +284,14 @@ private fun UsbHeroCard(usbPort: Int, onConnect: (String, Int) -> Unit) {
     var probe by remember(usbPort) { mutableStateOf<UsbProbeResult?>(null) }
     val aoaActive by com.orbiscreen.android.usb.UsbAccessoryManager.isAoaActiveFlow.collectAsState()
 
+    LaunchedEffect(Unit) {
+        if (!com.orbiscreen.android.usb.UsbAccessoryManager.isAoaActive) {
+            com.orbiscreen.android.usb.UsbAccessoryManager.init(context)
+        }
+    }
+
     LaunchedEffect(usbPort, aoaActive) {
         while (true) {
-            if (!com.orbiscreen.android.usb.UsbAccessoryManager.isAoaActive) {
-                com.orbiscreen.android.usb.UsbAccessoryManager.init(context)
-            }
             probe = HostApi().probeUsb(usbPort)
             kotlinx.coroutines.delay(1200)
         }

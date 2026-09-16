@@ -33,7 +33,9 @@ pub struct UinputInjector {
     cursor_y: f64,
     button_1_pressed: bool,
     touch_slot_active: [bool; crate::MAX_TOUCH_SLOTS],
+    touch_slot_id: [i32; crate::MAX_TOUCH_SLOTS],
     touch_active_count: u8,
+    button_touch_down: bool,
 }
 
 impl UinputInjector {
@@ -132,7 +134,9 @@ impl UinputInjector {
             cursor_y: f64::from(spec.height) / 2.0,
             button_1_pressed: false,
             touch_slot_active: [false; crate::MAX_TOUCH_SLOTS],
+            touch_slot_id: [-1; crate::MAX_TOUCH_SLOTS],
             touch_active_count: 0,
+            button_touch_down: false,
         };
         let _ = injector.release_tools();
         Ok(injector)
@@ -250,50 +254,70 @@ impl UinputInjector {
             self.cursor_y = f64::from(yi);
         }
         let tracking_id = if event.id >= 0 { event.id } else { slot as i32 };
-        let becoming_active = event.pressed && !self.touch_slot_active[slot];
-        let becoming_idle = !event.pressed && self.touch_slot_active[slot];
-        if becoming_active {
-            self.touch_slot_active[slot] = true;
-            self.touch_active_count = self.touch_active_count.saturating_add(1);
-            if self.touch_active_count == 1 {
+
+        if event.pressed {
+            let was_active = self.touch_slot_active[slot];
+            let id_changed = was_active && self.touch_slot_id[slot] != tracking_id;
+            if (!was_active && self.touch_active_count == 0)
+                || (id_changed && self.touch_active_count == 1)
+            {
                 self.release_tools()?;
             }
-        } else if becoming_idle {
-            self.touch_slot_active[slot] = false;
-            self.touch_active_count = self.touch_active_count.saturating_sub(1);
-        } else if !event.pressed {
-            return Ok(());
         }
 
         let mut writer = self.touchscreen.writer();
         let mut slot_writer = writer.slot(slot as u16)?;
-        if becoming_active {
-            slot_writer = slot_writer.set_tracking_id(tracking_id)?;
-        }
+
         if event.pressed {
+            let was_active = self.touch_slot_active[slot];
+            let id_changed = was_active && self.touch_slot_id[slot] != tracking_id;
+
+            if !was_active || id_changed {
+                if id_changed {
+                    slot_writer = slot_writer.set_tracking_id(-1)?;
+                } else {
+                    self.touch_active_count = self.touch_active_count.saturating_add(1);
+                }
+                slot_writer = slot_writer.set_tracking_id(tracking_id)?;
+                self.touch_slot_active[slot] = true;
+                self.touch_slot_id[slot] = tracking_id;
+            }
+
             slot_writer = slot_writer.set_position(xi, yi)?;
-        }
-        if becoming_idle {
-            slot_writer = slot_writer.set_tracking_id(-1)?;
-        }
-        writer = slot_writer.finish_slot()?;
-        if event.pressed {
+            writer = slot_writer.finish_slot()?;
             writer = writer.write_events(&[
                 AbsEvent::new(Abs::X, xi).into(),
                 AbsEvent::new(Abs::Y, yi).into(),
             ])?;
+
+            if !self.button_touch_down {
+                self.button_touch_down = true;
+                writer =
+                    writer.write_events(&[KEv::new(Key::BTN_TOUCH, KeyState::PRESSED).into()])?;
+            }
+        } else {
+            if self.touch_slot_active[slot] {
+                self.touch_slot_active[slot] = false;
+                self.touch_slot_id[slot] = -1;
+                self.touch_active_count = self.touch_active_count.saturating_sub(1);
+                slot_writer = slot_writer.set_tracking_id(-1)?;
+            }
+            writer = slot_writer.finish_slot()?;
+
+            if self.touch_active_count == 0 && self.button_touch_down {
+                self.button_touch_down = false;
+                writer =
+                    writer.write_events(&[KEv::new(Key::BTN_TOUCH, KeyState::RELEASED).into()])?;
+            }
         }
-        if becoming_active && self.touch_active_count == 1 {
-            writer = writer.write_events(&[KEv::new(Key::BTN_TOUCH, KeyState::PRESSED).into()])?;
-        } else if becoming_idle && self.touch_active_count == 0 {
-            writer = writer.write_events(&[KEv::new(Key::BTN_TOUCH, KeyState::RELEASED).into()])?;
-        }
+
         writer.finish()?;
         Ok(())
     }
 
     pub fn release_tools(&mut self) -> Result<(), InputError> {
         self.button_1_pressed = false;
+        self.button_touch_down = false;
         let xi = self.cursor_x.round() as i32;
         let yi = self.cursor_y.round() as i32;
         let events = vec![
