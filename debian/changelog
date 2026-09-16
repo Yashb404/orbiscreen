@@ -1,3 +1,13 @@
+orbiscreen (0.28.8-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.28.8 for Ubuntu noble.
+  * Terminate lingering daemon processes when D-Bus stop request times out or session bus name has no owner.
+  * Optimize Android video rendering pipeline for legacy and low-end tablets.
+  * Document software decoder fallback for low-end SoC hardware decoders.
+  * Bump version across workspace and packaging configurations.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Wed, 16 Sep 2026 14:18:00 +0300
+
 orbiscreen (0.28.7-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.28.7 for Ubuntu noble.

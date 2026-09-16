@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.28.8] - 2026-09-16
+
+Enhance daemon shutdown reliability by terminating lingering background processes on D-Bus stop timeouts or unowned session buses, clean orphaned audio sinks, harden the Android client video playback pipeline for legacy and low-end tablets, and bump the release matrix across all platforms.
+
+### 🐛 Bug Fixes
+- **Daemon Process Cleanup on Stop (`main.rs`)**:
+  - Enhanced `orbiscreen stop` command to clean lingering background daemon processes when D-Bus requests fail, time out, or when the session bus service has no active owner.
+  - Ensured orphaned PulseAudio and PipeWire virtual audio sinks are cleaned up during daemon stop execution.
+- **Android Client Low-End Device Support (`PlayerHolder.kt`)**:
+  - Hardened ExoPlayer video playback pipeline to eliminate frame freezes on legacy Android tablets.
+  - Documented force software decoder setting for low-end SoC hardware decoders.
+
+### 📦 Packaging & Versions
+- **Workspace & Packaging**:
+  - Bumped Cargo workspace package version to `0.28.8`.
+  - Incremented Android client `versionCode` to `101`; updated `versionName` to `"0.28.8"`.
+  - Updated `tauri.conf.json` version to `0.28.8`.
+  - Bumped PKGBUILD `pkgver` to `0.28.8`.
+  - Added `0.28.8-1` release entry to `debian/changelog` and `data/orbiscreen-copr.spec`.
+  - Synchronized documentation badges across all architecture and specification guides.
+
+---
+
 ## [v0.28.7] - 2026-09-16
 
 Eliminate frozen video stream and permanent frame drops on low-end and legacy Android tablets, relax ExoPlayer buffer drop thresholds to absorb decode jitter without dropping frames, prevent cascading drop-to-keyframe state, automatically calculate display geometry from kscreen-doctor to position KWin virtual displays adjacent to active screens, and bump version across workspace, packages, and documentation.

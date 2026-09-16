@@ -364,23 +364,6 @@ async fn main() -> ExitCode {
                     ui::print_stop_card(false, &reply);
                     ExitCode::SUCCESS
                 }
-                Err(zbus::Error::MethodError(name, _, _))
-                    if name.to_string().contains("ServiceUnknown")
-                        || name.to_string().contains("NameHasNoOwner") =>
-                {
-                    let systemd_status = std::process::Command::new("systemctl")
-                        .args(["--user", "is-active", "orbiscreen"])
-                        .output()
-                        .ok()
-                        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                        .unwrap_or_default();
-                    if systemd_status == "active" {
-                        run_service_action(ServiceAction::Stop).await
-                    } else {
-                        ui::print_stop_card(false, "Daemon is not running on the session bus");
-                        ExitCode::from(1)
-                    }
-                }
                 Err(e) => {
                     let systemd_status = std::process::Command::new("systemctl")
                         .args(["--user", "is-active", "orbiscreen"])
