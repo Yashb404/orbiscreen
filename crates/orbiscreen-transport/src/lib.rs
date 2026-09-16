@@ -816,7 +816,6 @@ async fn api_control(
             info!("host control: requested resolution change on {target_output} to {width}x{height}@{fps}Hz");
             let mode_str = format!("output.{target_output}.mode.{width}x{height}@{fps}");
             let res = tokio::process::Command::new("kscreen-doctor")
-
                 .arg(&mode_str)
                 .status()
                 .await;
