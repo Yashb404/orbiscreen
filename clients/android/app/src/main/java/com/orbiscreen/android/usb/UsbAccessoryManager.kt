@@ -237,7 +237,6 @@ object UsbAccessoryManager {
             if (bytesRead <= 0) break
 
             if (accLen + bytesRead > accBuf.size) {
-                val newCap = minOf(131072, maxOf(accBuf.size * 2, accLen + bytesRead))
                 val newCap = minOf(4194304, maxOf(accBuf.size * 2, accLen + bytesRead))
                 if (newCap > accBuf.size) {
                     val expanded = ByteArray(newCap)
