@@ -120,7 +120,6 @@ async fn main() {
             commands::run_doctor_fix,
             commands::get_autostart,
             commands::set_autostart,
-            commands::open_browser
             commands::open_browser,
             commands::set_display_settings
         ])
