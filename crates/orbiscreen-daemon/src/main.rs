@@ -390,6 +390,9 @@ async fn main() -> ExitCode {
                         .unwrap_or_default();
                     if systemd_status == "active" {
                         run_service_action(ServiceAction::Stop).await
+                    } else if kill_lingering_orbiscreen_processes() {
+                        ui::print_stop_card(false, "Terminated lingering daemon process");
+                        ExitCode::SUCCESS
                     } else {
                         let err_str = e.to_string();
                         if err_str.contains("No such file or directory")
@@ -1452,6 +1455,61 @@ async fn restore_virtual_output(
         }
     }
     false
+}
+
+fn kill_lingering_orbiscreen_processes() -> bool {
+    let current_pid = std::process::id();
+    let mut killed = false;
+    if let Ok(entries) = std::fs::read_dir("/proc") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let Ok(pid) = file_name.parse::<u32>() else {
+                continue;
+            };
+            if pid == current_pid {
+                continue;
+            }
+            if let Ok(comm) = std::fs::read_to_string(path.join("comm")) {
+                if comm.trim() == "orbiscreen" {
+                    let _ = std::process::Command::new("kill")
+                        .args(["-TERM", &pid.to_string()])
+                        .status();
+                    killed = true;
+                }
+            }
+        }
+    }
+    if killed {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        if let Ok(entries) = std::fs::read_dir("/proc") {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                let Ok(pid) = file_name.parse::<u32>() else {
+                    continue;
+                };
+                if pid == current_pid {
+                    continue;
+                }
+                if let Ok(comm) = std::fs::read_to_string(path.join("comm")) {
+                    if comm.trim() == "orbiscreen" {
+                        let _ = std::process::Command::new("kill")
+                            .args(["-KILL", &pid.to_string()])
+                            .status();
+                    }
+                }
+            }
+        }
+    }
+    killed
 }
 
 fn cleanup_lingering_audio_sinks() {
