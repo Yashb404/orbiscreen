@@ -2,7 +2,6 @@
 
 # Multi-Distro Packaging Guide - Orbiscreen
 
-[![Version](https://img.shields.io/badge/version-0.28.6-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![Version](https://img.shields.io/badge/version-0.28.7-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-16a34a?style=flat-square&logo=rust)
@@ -31,12 +30,6 @@
 
 When cutting a release, the version must be updated across all packages:
 
-- `Cargo.toml`: `[workspace.package].version = "0.28.6"`
-- `clients/android/app/build.gradle.kts`: `versionName = "0.28.6"`, `versionCode` incremented
-- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.28.6"`
-- `PKGBUILD`: `pkgver=0.28.6`
-- `debian/changelog`: new entry for `0.28.6-1`
-- `data/orbiscreen-copr.spec`: `Version: 0.28.6`
 - `Cargo.toml`: `[workspace.package].version = "0.28.7"`
 - `clients/android/app/build.gradle.kts`: `versionName = "0.28.7"`, `versionCode` incremented
 - `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.28.7"`
@@ -55,7 +48,6 @@ cargo run -p orbiscreen-daemon -- --version
 <a id="packaging-matrix"></a>
 ## 📦 Packaging Matrix
 
-The release matrix is: `0.28.6` (workspace), `versionCode = 99` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
 The release matrix is: `0.28.7` (workspace), `versionCode = 100` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
 
 Orbiscreen provides build configurations and package definitions for all major Linux distributions and Android:
