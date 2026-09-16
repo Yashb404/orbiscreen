@@ -12,7 +12,7 @@ use zbus::interface;
 pub struct DaemonHandles {
     pub is_running: Arc<AtomicBool>,
     pub stats: Arc<Stats>,
-    pub config: Config,
+    pub config: std::sync::RwLock<Config>,
     pub encoder: &'static str,
     pub capture_backend: &'static str,
     pub shutdown_tx: tokio::sync::watch::Sender<bool>,
@@ -32,6 +32,16 @@ impl OrbiscreenDbusServer {
 #[interface(name = "com.orbiscreen.Daemon")]
 impl OrbiscreenDbusServer {
     async fn get_status(&self) -> String {
+        let (dw, dh, dfps, sport) = if let Ok(cfg) = self.handles.config.read() {
+            (
+                cfg.display.width,
+                cfg.display.height,
+                cfg.display.refresh_rate_hz,
+                cfg.transport.signaling_port,
+            )
+        } else {
+            (1920, 1080, 60, 8788)
+        };
         serde_json::json!({
             "running": self.handles.is_running.load(Ordering::SeqCst),
             "frames_forwarded": self.handles.stats.frames_forwarded(),
@@ -43,12 +53,47 @@ impl OrbiscreenDbusServer {
             "usb_aoa_ready": self.handles.stats.is_usb_aoa_ready(),
             "encoder": self.handles.encoder,
             "capture_backend": self.handles.capture_backend,
-            "display_width": self.handles.config.display.width,
-            "display_height": self.handles.config.display.height,
-            "display_fps": self.handles.config.display.refresh_rate_hz,
-            "signaling_port": self.handles.config.transport.signaling_port,
+            "display_width": dw,
+            "display_height": dh,
+            "display_fps": dfps,
+            "signaling_port": sport,
         })
         .to_string()
+    }
+
+    async fn set_resolution(&self, width: u32, height: u32, fps: u32) -> String {
+        let width = width.clamp(320, 7680);
+        let height = height.clamp(240, 4320);
+        let fps = fps.clamp(30, 240);
+
+        if let Ok(mut cfg) = self.handles.config.write() {
+            cfg.display.width = width;
+            cfg.display.height = height;
+            cfg.display.refresh_rate_hz = fps;
+            let config_path = orbiscreen_core::default_config_path();
+            if let Some(parent) = config_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Ok(toml) = orbiscreen_core::dump_config(&cfg) {
+                let _ = std::fs::write(&config_path, toml);
+            }
+        }
+
+        let target_output = "Virtual-ORBISCREEN";
+        let mode_str = format!("output.{target_output}.mode.{width}x{height}@{fps}");
+        let res = tokio::process::Command::new("kscreen-doctor")
+            .arg(&mode_str)
+            .status()
+            .await;
+
+        match res {
+            Ok(status) if status.success() => {
+                format!("Resolution updated to {width}x{height}@{fps}Hz via kscreen-doctor")
+            }
+            _ => {
+                format!("Resolution saved in configuration: {width}x{height}@{fps}Hz")
+            }
+        }
     }
 
     async fn stop(&self) -> String {
@@ -69,9 +114,13 @@ impl OrbiscreenDbusServer {
     }
 
     async fn get_config(&self) -> String {
-        match orbiscreen_core::dump_config(&self.handles.config) {
-            Ok(toml) => toml,
-            Err(e) => format!("config serialize error: {e}"),
+        if let Ok(cfg) = self.handles.config.read() {
+            match orbiscreen_core::dump_config(&cfg) {
+                Ok(toml) => toml,
+                Err(e) => format!("config serialize error: {e}"),
+            }
+        } else {
+            "config read error".to_string()
         }
     }
 }
@@ -180,7 +229,7 @@ mod tests {
         Arc::new(DaemonHandles {
             is_running: Arc::new(AtomicBool::new(true)),
             stats: Arc::new(Stats::default()),
-            config: Config::default(),
+            config: std::sync::RwLock::new(Config::default()),
             encoder: "x264",
             capture_backend: "Wayland",
             shutdown_tx,
@@ -227,5 +276,16 @@ mod tests {
         let cfg = server.get_config().await;
         assert!(cfg.contains("[display]"));
         assert!(cfg.contains("width = 1920"));
+    }
+
+    #[tokio::test]
+    async fn set_resolution_updates_config() {
+        let server = OrbiscreenDbusServer::new(test_handles());
+        let reply = server.set_resolution(2560, 1600, 90).await;
+        assert!(reply.contains("2560x1600@90Hz"));
+        let status = server.get_status().await;
+        assert!(status.contains("\"display_width\":2560"));
+        assert!(status.contains("\"display_height\":1600"));
+        assert!(status.contains("\"display_fps\":90"));
     }
 }

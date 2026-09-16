@@ -1,3 +1,13 @@
+orbiscreen (0.28.6-1~ubuntunoble1) noble; urgency=medium
+
+  * Release 0.28.6 for Ubuntu noble.
+  * Enable live virtual display resolution and framerate switching from desktop GUI Display settings.
+  * Wire D-Bus SetResolution method to kscreen-doctor dynamic modes and persistent orbiscreen.toml config.
+  * Synchronize UI active resolution and framerate chips with daemon status.
+  * Add Arch Linux and Manjaro PKGBUILD build instructions to documentation.
+
+ -- shadow-x78 <107577376+shadow-x78@users.noreply.github.com>  Wed, 16 Sep 2026 08:05:00 +0300
+
 orbiscreen (0.28.5-1~ubuntunoble1) noble; urgency=medium
 
   * Release 0.28.5 for Ubuntu noble.

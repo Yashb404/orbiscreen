@@ -10,7 +10,7 @@
 
 **High-performance, ultra-low latency virtual secondary display for Linux (Wayland &amp; X11) streamed to Android tablets and phones.**
 
-[![Version](https://img.shields.io/badge/version-0.28.5-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.28.6-2563eb?style=for-the-badge&logo=semver)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=for-the-badge)](LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-16a34a?style=for-the-badge&logo=rust)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Android-9333ea?style=for-the-badge&logo=linux)
@@ -145,6 +145,14 @@
   ```bash
   sudo dnf copr enable shadow-x78/orbiscreen -y
   sudo dnf install orbiscreen -y
+  ```
+
+- **Arch Linux / Manjaro (PKGBUILD):**
+  ```bash
+  sudo pacman -Syu --needed git base-devel
+  git clone https://github.com/shadow-x78/orbiscreen.git
+  cd orbiscreen
+  makepkg -si
   ```
 
 - **Universal AppImage (`.AppImage`):**

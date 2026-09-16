@@ -2,7 +2,7 @@
 
 # دليل التغليف متعدد التوزيعات - Orbiscreen
 
-[![الإصدار](https://img.shields.io/badge/version-0.28.5-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![الإصدار](https://img.shields.io/badge/version-0.28.6-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![الرخصة](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-16a34a?style=flat-square&logo=rust)
 ![المنصّة](https://img.shields.io/badge/platform-Linux%20%7C%20Android-9333ea?style=flat-square&logo=linux)
@@ -12,13 +12,14 @@
 <a id="packaging-matrix"></a>
 ## 📦 مصفوفة حزم التوزيعات
 
-مصفوفة الإصدار: `0.28.5` (مساحة العمل)، `versionCode = 98` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع - راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
+مصفوفة الإصدار: `0.28.6` (مساحة العمل)، `versionCode = 99` (Android). ملاحظة: keystore إصدار Android لم تعد مضمنة في المستودع - راجع SECURITY.md؛ وفّر `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` عند بناء APK الإصدار.
 
 يوفّر Orbiscreen تكوينات البناء وتعريفات الحزم لجميع توزيعات Linux الرئيسية وAndroid:
 
 - **AppImage:** حزمة محمولة لجميع توزيعات Linux.
 - **Debian / Ubuntu (.deb):** حزمة Debian أصلية لـ Ubuntu وDebian وMint وPop!_OS.
 - **Fedora / RHEL (.rpm):** حزمة RPM أصلية لـ Fedora وRHEL وCentOS وopenSUSE.
+- **Arch Linux / Manjaro (`PKGBUILD`):** حزمة Arch أصلية تُبنى عبر `makepkg`.
 - **أرشيف عام (.tar.gz):** أرشيف إصدار مستقل مع مثبّت بأمر واحد.
 - **Android APK (.apk):** عميل Material 3 + Jetpack Compose لأجهزة Android اللوحية والهواتف.
 
@@ -44,12 +45,21 @@ cargo build --release --workspace
 ```
 يتطلب `rpmbuild` (من حزمة `rpm-build`)؛ وبدونه يجهّز السكربت شجرة الملفات في `target/rpm-staging`.
 
-### 4. AppImage
+### 4. آرش لينكس / مانجارو (`PKGBUILD`)
+```bash
+sudo pacman -Syu --needed git base-devel
+git clone https://github.com/shadow-x78/orbiscreen.git
+cd orbiscreen
+makepkg -si
+```
+يتضمن المستودع ملف `PKGBUILD` في المجلد الرئيسي. يؤدي تشغيل `makepkg -si` إلى تنزيل أرشيف الإصدار تلقائياً، وتثبيت كافة اعتماديات البناء والتشغيل عبر pacman، وبناء مساحة العمل عبر `cargo build --release --workspace --locked`، وتشغيل الفحوصات، وتثبيت البرنامج وملفات سطح المكتب في المسارات النظامية.
+
+### 5. AppImage
 ```bash
 ./scripts/package-appimage.sh
 ```
 
-### 5. عميل Android (`orbiscreen-android-release.apk`)
+### 6. عميل Android (`orbiscreen-android-release.apk`)
 ```bash
 cd clients/android
 ./gradlew assembleRelease
@@ -105,6 +115,7 @@ sudo apt update
 
 - **Debian / Ubuntu (`.deb`):** `sudo apt-get remove orbiscreen`
 - **Fedora / RHEL (`.rpm`):** `sudo dnf remove orbiscreen`
+- **آرش لينكس / مانجارو:** `sudo pacman -R orbiscreen`
 - **الأرشيف المستقل:** شغّل `./scripts/uninstall.sh` المرفق في المصدر أو مجلد الأرشيف.
 - **Android:** اضغط مطوّلاً على أيقونة التطبيق ← **App info** ← **Uninstall**.
 

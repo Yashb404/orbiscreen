@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.28.6] - 2026-09-16
+
+Enable dynamic virtual display resolution and framerate switching directly from the desktop GUI Display & Input settings, connect GUI chips to new D-Bus SetResolution method to immediately apply modes via kscreen-doctor and persist changes to orbiscreen.toml, synchronize active resolution and framerate chips with daemon status on startup, and add Arch Linux PKGBUILD build instructions to documentation and packaging guides.
+
+### 🐛 Bug Fixes
+- **Live GUI Resolution & Framerate Switching**:
+  - Added `SetResolution(width, height, fps)` D-Bus method to `com.orbiscreen.Daemon` interface, dynamically applying modes to virtual outputs via `kscreen-doctor` and persisting display settings in `orbiscreen.toml`.
+  - Added `set_display_settings` Tauri command in `orbiscreen-gui` and wired resolution and framerate chip click handlers to apply modes and update preview text in real-time.
+  - Synchronized active resolution and framerate chips with daemon status on GUI startup and status polling.
+  - Added offline fallback in GUI status probe to load saved geometry from `orbiscreen.toml` when daemon is not running.
+
+### 📖 Documentation & Packaging
+- **Arch Linux PKGBUILD Build Guide**:
+  - Added step-by-step Arch Linux / Manjaro build instructions using the repository PKGBUILD with `makepkg -si` in `README.md`, `README_AR.md`, `docs/PACKAGING.md`, and `docs/PACKAGING_AR.md`.
+- **Packaging & Version Bump**:
+  - Bumped workspace package version to `0.28.6`.
+  - Incremented Android `versionCode` to `99`; updated `versionName` to `"0.28.6"`.
+  - Updated `tauri.conf.json` version to `0.28.6`.
+  - Bumped PKGBUILD `pkgver` to `0.28.6`.
+  - Added `0.28.6-1` changelog entry in `debian/changelog` and `data/orbiscreen-copr.spec`.
+
+---
+
 ## [v0.28.5] - 2026-09-16
 
 Send FRAME_FLAG_RESET on host shutdown to trigger immediate AOA accessory teardown in Android client, check host health endpoint before reporting USB ready to eliminate stale connection state after daemon exit, fix fit mode selection by mapping scale modes to engine integer values and applying them in real-time, clarify pointer speed UI controls for trackpad mode, resolve secondary display touch injection drop in uinput injector by tracking MT Type B slot IDs, expand OkHttp client concurrent request limits to prevent touch event queue stalls, and configure lightweight default capture profile (720p@60Hz, 3500 kbps) for secondary display to eliminate bus congestion.

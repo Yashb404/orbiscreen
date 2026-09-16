@@ -8,7 +8,7 @@
 
 # ── Metadata ──
 Name:           orbiscreen
-Version:        0.28.5
+Version:        0.28.6
 Release:        1%{?dist}
 Summary:        Turn Android devices into high-performance secondary monitors for Linux
 
@@ -142,6 +142,9 @@ fi
 %{_udevrulesdir}/99-orbiscreen-usb.rules
 
 %changelog
+* Wed Sep 16 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.6-1
+- Release 0.28.6: Enable live virtual display resolution and framerate switching from desktop GUI Display settings; wire D-Bus SetResolution method to kscreen-doctor dynamic modes and persistent orbiscreen.toml config; synchronize UI active resolution and framerate chips with daemon status; document Arch Linux PKGBUILD build instructions in README and packaging guides.
+
 * Wed Sep 16 2026 shadow-x78 <107577376+shadow-x78@users.noreply.github.com> - 0.28.5-1
 - Release 0.28.5: Send FRAME_FLAG_RESET on host shutdown to trigger immediate AOA accessory teardown in Android client; check host health endpoint before reporting USB ready to eliminate stale connection state after daemon exit; fix fit mode selection by mapping scale modes to engine integer values and applying them in real-time; clarify pointer speed UI controls for trackpad mode; resolve secondary display touch injection drop in uinput injector by tracking MT Type B slot IDs; expand OkHttp client concurrent request limits to prevent touch event queue stalls; configure lightweight default capture profile (720p@60Hz, 3500 kbps) for secondary display to eliminate bus congestion.
 

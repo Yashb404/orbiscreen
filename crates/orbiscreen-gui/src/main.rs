@@ -121,6 +121,8 @@ async fn main() {
             commands::get_autostart,
             commands::set_autostart,
             commands::open_browser
+            commands::open_browser,
+            commands::set_display_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running orbiscreen-gui");

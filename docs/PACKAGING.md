@@ -2,7 +2,7 @@
 
 # Multi-Distro Packaging Guide - Orbiscreen
 
-[![Version](https://img.shields.io/badge/version-0.28.5-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.28.6-2563eb?style=flat-square&logo=semver)](../CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-GPL--3.0-dc2626?style=flat-square)](../LICENSE)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-16a34a?style=flat-square&logo=rust)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Android-9333ea?style=flat-square&logo=linux)
@@ -19,6 +19,7 @@
 - [Version Synchronization](#version-synchronization)
 - [Fedora / RHEL / CentOS (COPR)](#fedora--rhel--centos-copr)
 - [Debian / Ubuntu / Linux Mint (.deb)](#debian--ubuntu--linux-mint-deb)
+- [Arch Linux / Manjaro (PKGBUILD)](#arch-linux--manjaro-pkgbuild)
 - [Android Release Packaging](#android-release-packaging)
 - [Signing & Distribution](#signing--distribution)
 - [License](#license)
@@ -29,12 +30,12 @@
 
 When cutting a release, the version must be updated across all packages:
 
-- `Cargo.toml`: `[workspace.package].version = "0.28.5"`
-- `clients/android/app/build.gradle.kts`: `versionName = "0.28.5"`, `versionCode` incremented
-- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.28.5"`
-- `PKGBUILD`: `pkgver=0.28.5`
-- `debian/changelog`: new entry for `0.28.5-1`
-- `data/orbiscreen-copr.spec`: `Version: 0.28.5`
+- `Cargo.toml`: `[workspace.package].version = "0.28.6"`
+- `clients/android/app/build.gradle.kts`: `versionName = "0.28.6"`, `versionCode` incremented
+- `crates/orbiscreen-gui/tauri.conf.json`: `"version": "0.28.6"`
+- `PKGBUILD`: `pkgver=0.28.6`
+- `debian/changelog`: new entry for `0.28.6-1`
+- `data/orbiscreen-copr.spec`: `Version: 0.28.6`
 
 Use the check script:
 
@@ -47,13 +48,14 @@ cargo run -p orbiscreen-daemon -- --version
 <a id="packaging-matrix"></a>
 ## 📦 Packaging Matrix
 
-The release matrix is: `0.28.5` (workspace), `versionCode = 98` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
+The release matrix is: `0.28.6` (workspace), `versionCode = 99` (Android). The Android release keystore is no longer shipped in the repo (see SECURITY.md); supply `ORBISCREEN_KEYSTORE_PATH`/`ORBISCREEN_STORE_PASSWORD`/`ORBISCREEN_KEY_ALIAS`/`ORBISCREEN_KEY_PASSWORD` when building a release APK.
 
 Orbiscreen provides build configurations and package definitions for all major Linux distributions and Android:
 
 - **AppImage:** Portable bundle for all Linux distributions.
 - **Debian / Ubuntu (.deb):** Native Debian package for Ubuntu, Debian, Mint, and Pop!_OS.
 - **Fedora / RHEL (.rpm):** Native RPM package for Fedora, RHEL, CentOS, and openSUSE.
+- **Arch Linux / Manjaro (`PKGBUILD`):** Native Arch package built via `makepkg`.
 - **Generic Tarball (.tar.gz):** Standalone release archive with one-command installer.
 - **Android APK (.apk):** Material 3 + Jetpack Compose client for Android tablets and smartphones.
 
@@ -79,12 +81,22 @@ Requires `dpkg-deb` (from the `dpkg` package); the script builds release binarie
 ```
 Requires `rpmbuild` (from `rpm-build`); without it the script still stages the file tree under `target/rpm-staging`.
 
-### 4. AppImage
+<a id="arch-linux--manjaro-pkgbuild"></a>
+### 4. Arch Linux / Manjaro (`PKGBUILD`)
+```bash
+sudo pacman -Syu --needed git base-devel
+git clone https://github.com/shadow-x78/orbiscreen.git
+cd orbiscreen
+makepkg -si
+```
+The repository includes a standalone `PKGBUILD` in the project root. Running `makepkg -si` automatically downloads the release tarball, resolves all build and runtime dependencies via pacman, compiles the workspace crates with `cargo build --release --workspace --locked`, runs unit tests, and installs the binary and desktop integration files directly to system paths.
+
+### 5. AppImage
 ```bash
 ./scripts/package-appimage.sh
 ```
 
-### 5. Android Client (`orbiscreen-android-release.apk`)
+### 6. Android Client (`orbiscreen-android-release.apk`)
 ```bash
 cd clients/android
 ./gradlew assembleRelease
@@ -140,6 +152,7 @@ Each package manager handles uninstallation cleanly:
 
 - **Debian / Ubuntu (`.deb`):** `sudo apt-get remove orbiscreen`
 - **Fedora / RHEL (`.rpm`):** `sudo dnf remove orbiscreen`
+- **Arch Linux / Manjaro:** `sudo pacman -R orbiscreen`
 - **Standalone Tarball:** Run `./scripts/uninstall.sh` provided in the source or tarball directory.
 - **Android:** Long-press the app icon → **App info** → **Uninstall**.
 

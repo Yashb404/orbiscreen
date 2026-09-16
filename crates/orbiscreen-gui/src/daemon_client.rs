@@ -79,9 +79,26 @@ impl DaemonClient {
         }
 
         let is_running = Self::check_process_running().await;
+        let cfg_path = orbiscreen_core::default_config_path();
+        let (cfg_w, cfg_h, cfg_fps) = if let Ok(s) = std::fs::read_to_string(&cfg_path) {
+            if let Ok(cfg) = orbiscreen_core::load_config(&s) {
+                (
+                    cfg.display.width,
+                    cfg.display.height,
+                    cfg.display.refresh_rate_hz,
+                )
+            } else {
+                (1920, 1080, 60)
+            }
+        } else {
+            (1920, 1080, 60)
+        };
         DaemonStatus {
             running: is_running,
             local_ips: Self::detect_local_ips(),
+            display_width: cfg_w,
+            display_height: cfg_h,
+            display_fps: cfg_fps,
             ..Default::default()
         }
     }
@@ -177,6 +194,48 @@ impl DaemonClient {
             std::fs::remove_file(&autostart_file).map_err(|e| e.to_string())?;
         }
         Ok(())
+    }
+
+    pub async fn set_display_settings(width: u32, height: u32, fps: u32) -> Result<String, String> {
+        let width = width.clamp(320, 7680);
+        let height = height.clamp(240, 4320);
+        let fps = fps.clamp(30, 240);
+
+        let cfg_path = orbiscreen_core::default_config_path();
+        let mut cfg = if let Ok(s) = std::fs::read_to_string(&cfg_path) {
+            orbiscreen_core::load_config(&s).unwrap_or_default()
+        } else {
+            orbiscreen_core::Config::default()
+        };
+        cfg.display.width = width;
+        cfg.display.height = height;
+        cfg.display.refresh_rate_hz = fps;
+        if let Some(parent) = cfg_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(toml) = orbiscreen_core::dump_config(&cfg) {
+            let _ = std::fs::write(&cfg_path, toml);
+        }
+
+        if let Ok(conn) = zbus::Connection::session().await {
+            if let Ok(proxy) = zbus::Proxy::new(
+                &conn,
+                "org.shadow-x78.Orbiscreen",
+                "/com/orbiscreen/Daemon",
+                "com.orbiscreen.Daemon",
+            )
+            .await
+            {
+                if let Ok(reply) = proxy
+                    .call::<_, _, String>("SetResolution", &(width, height, fps))
+                    .await
+                {
+                    return Ok(reply);
+                }
+            }
+        }
+
+        Ok(format!("Saved {width}x{height}@{fps}Hz to configuration"))
     }
 
     fn autostart_file_path() -> PathBuf {

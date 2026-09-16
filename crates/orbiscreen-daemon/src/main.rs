@@ -2603,7 +2603,7 @@ async fn run_start(
     let dbus_handles = std::sync::Arc::new(dbus::DaemonHandles {
         is_running: is_running.clone(),
         stats: stats.clone(),
-        config: cfg.clone(),
+        config: std::sync::RwLock::new(cfg.clone()),
         encoder: encoder_name,
         capture_backend: backend_name,
         shutdown_tx,

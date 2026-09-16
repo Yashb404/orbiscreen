@@ -381,6 +381,16 @@ async function refreshStatus() {
             previewResolution.textContent = `${width} × ${height} @ ${fps}Hz`;
         }
 
+        document.querySelectorAll("#resChips .chip").forEach(chip => {
+            const w = parseInt(chip.getAttribute("data-w"), 10);
+            const h = parseInt(chip.getAttribute("data-h"), 10);
+            chip.classList.toggle("active", w === width && h === height);
+        });
+        document.querySelectorAll("#fpsChips .chip").forEach(chip => {
+            const f = parseInt(chip.getAttribute("data-fps"), 10);
+            chip.classList.toggle("active", f === fps);
+        });
+
         if (lblEncoder) {
             lblEncoder.textContent = status.encoder || "Auto";
         }
@@ -469,15 +479,51 @@ if (btnOpenUsb) {
 
 document.querySelectorAll("#resChips .chip").forEach(chip => {
     chip.addEventListener("click", () => {
+    chip.addEventListener("click", async () => {
         document.querySelectorAll("#resChips .chip").forEach(c => c.classList.remove("active"));
         chip.classList.add("active");
+        const w = parseInt(chip.getAttribute("data-w"), 10);
+        const h = parseInt(chip.getAttribute("data-h"), 10);
+        const activeFpsChip = document.querySelector("#fpsChips .chip.active");
+        const fps = activeFpsChip ? parseInt(activeFpsChip.getAttribute("data-fps"), 10) : (lastStatus && lastStatus.display_fps ? lastStatus.display_fps : 60);
+        if (previewResolution) {
+            previewResolution.textContent = `${w} × ${h} @ ${fps}Hz`;
+        }
+        try {
+            await invoke("set_display_settings", { width: w, height: h, fps: fps });
+            if (lastStatus) {
+                lastStatus.display_width = w;
+                lastStatus.display_height = h;
+                lastStatus.display_fps = fps;
+            }
+        } catch (e) {
+            console.error("Failed to set display settings:", e);
+        }
     });
 });
 
 document.querySelectorAll("#fpsChips .chip").forEach(chip => {
     chip.addEventListener("click", () => {
+    chip.addEventListener("click", async () => {
         document.querySelectorAll("#fpsChips .chip").forEach(c => c.classList.remove("active"));
         chip.classList.add("active");
+        const fps = parseInt(chip.getAttribute("data-fps"), 10);
+        const activeResChip = document.querySelector("#resChips .chip.active");
+        const w = activeResChip ? parseInt(activeResChip.getAttribute("data-w"), 10) : (lastStatus && lastStatus.display_width ? lastStatus.display_width : 1920);
+        const h = activeResChip ? parseInt(activeResChip.getAttribute("data-h"), 10) : (lastStatus && lastStatus.display_height ? lastStatus.display_height : 1080);
+        if (previewResolution) {
+            previewResolution.textContent = `${w} × ${h} @ ${fps}Hz`;
+        }
+        try {
+            await invoke("set_display_settings", { width: w, height: h, fps: fps });
+            if (lastStatus) {
+                lastStatus.display_width = w;
+                lastStatus.display_height = h;
+                lastStatus.display_fps = fps;
+            }
+        } catch (e) {
+            console.error("Failed to set display settings:", e);
+        }
     });
 });
 
